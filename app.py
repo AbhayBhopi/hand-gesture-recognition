@@ -8,6 +8,11 @@ import streamlit as st
 import plotly.express as px
 import pandas as pd
 import numpy as np
+import cv2
+from collections import Counter, deque
+import av
+from streamlit_webrtc import webrtc_streamer, RTCConfiguration, WebRtcMode
+import mediapipe as mp
 
 # Set Streamlit Page Configuration
 st.set_page_config(
@@ -249,31 +254,114 @@ with st.sidebar:
 
 # APP MODES IMPLEMENTATION
 
-# MODE 1 & MODE 2 Common Inference Handler
-if app_mode in ["📸 Camera / Live Capture", "🖼️ Upload Image"]:
+# MODE 1: LIVE CAMERA RECOGNITION
+if app_mode == "📸 Camera / Live Capture":
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    st.subheader("🔴 Live Real-Time WebRTC Hand Gesture Input")
+    
+    col1, col2 = st.columns([1.1, 1], gap="medium")
+    
+    with col1:
+        st.markdown("Grant camera permissions to start streaming.")
+        
+        # Free Google STUN server to establish connection over the internet
+        RTC_CONFIGURATION = RTCConfiguration(
+            {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+        )
+        
+        # Initialize MediaPipe Tasks API
+        from mediapipe.tasks import python
+        from mediapipe.tasks.python import vision
+        
+        base_options = python.BaseOptions(model_asset_path='hand_landmarker.task')
+        options = vision.HandLandmarkerOptions(base_options=base_options, num_hands=1)
+        hands_detector = vision.HandLandmarker.create_from_options(options)
+        
+        # Hand Skeleton Connections
+        HAND_CONNECTIONS = [(0, 1), (1, 2), (2, 3), (3, 4), (5, 6), (6, 7), (7, 8), (9, 10), (10, 11), (11, 12), (13, 14), (14, 15), (15, 16), (17, 18), (18, 19), (19, 20), (0, 5), (5, 9), (9, 13), (13, 17), (0, 17)]
+        
+        def video_frame_callback(frame):
+            img = frame.to_ndarray(format="bgr24")
+            
+            rgb_frame = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            pil_image = Image.fromarray(rgb_frame)
+            
+            # 1. Predict Gesture using PyTorch
+            top_pred, conf, _ = predict(pil_image, model, device)
+            display_pred = top_pred if conf >= 50.0 and top_pred != 'nothing' else "No hand detected"
+            
+            # 2. Extract and Draw MediaPipe Hand Landmarks manually using Tasks API
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+            detection_result = hands_detector.detect(mp_image)
+            
+            if detection_result.hand_landmarks:
+                for hand_landmarks in detection_result.hand_landmarks:
+                    h, w, _ = img.shape
+                    points = []
+                    
+                    # Get pixel coordinates
+                    for lm in hand_landmarks:
+                        cx, cy = int(lm.x * w), int(lm.y * h)
+                        points.append((cx, cy))
+                        cv2.circle(img, (cx, cy), 5, (121, 22, 76), -1)
+                        cv2.circle(img, (cx, cy), 2, (250, 44, 250), -1)
+                        
+                    # Draw connecting skeleton lines
+                    for connection in HAND_CONNECTIONS:
+                        pt1 = points[connection[0]]
+                        pt2 = points[connection[1]]
+                        cv2.line(img, pt1, pt2, (121, 22, 76), 2)
+            else:
+                display_pred = "No hand detected"
+            
+            # Overlay text prediction on the frame
+            box_color = (0, 255, 0) if display_pred != "No hand detected" else (255, 0, 0)
+            cv2.rectangle(img, (0, 0), (img.shape[1], 80), (0, 0, 0), -1)
+            cv2.putText(img, f"Gesture: {display_pred}", (20, 50), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.2, box_color, 3, cv2.LINE_AA)
+            
+            return av.VideoFrame.from_ndarray(img, format="bgr24")
+
+        webrtc_streamer(
+            key="gesture-recognition",
+            mode=WebRtcMode.SENDRECV,
+            rtc_configuration=RTC_CONFIGURATION,
+            video_frame_callback=video_frame_callback,
+            media_stream_constraints={"video": True, "audio": False},
+            async_processing=True
+        )
+        
+        if os.path.exists("asl_alphabet_guide.png"):
+            with st.expander("🖐️ Need help with signs? View ASL Reference Guide"):
+                st.image("asl_alphabet_guide.png", caption="ASL Hand Gestures Chart", use_container_width=True)
+                
+    with col2:
+        st.subheader("🧠 Live Recognition Result")
+        st.info("The AI draws the predicted gesture directly onto your live video feed! Ensure your hand is clearly visible in the camera.")
+        st.markdown("### Why WebRTC?")
+        st.markdown("Because this app runs in the cloud, standard desktop camera inputs don't work. **WebRTC** establishes a secure, low-latency tunnel directly between your browser and our AI server.")
+        
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# MODE 2: UPLOAD IMAGE INFERENCE
+elif app_mode == "🖼️ Upload Image":
     col1, col2 = st.columns([1.1, 1], gap="medium")
     
     with col1:
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.subheader("📷 Gesture Input")
+        st.subheader("🖼️ Upload Gesture Input")
         
         image_input = None
-        if app_mode == "📸 Camera / Live Capture":
-            camera_img = st.camera_input("Capture sign gesture image")
-            if camera_img:
-                image_input = Image.open(camera_img)
-        else:
-            uploaded_file = st.file_uploader("Upload a gesture photo (JPG, PNG)", type=['jpg', 'jpeg', 'png'])
-            if uploaded_file:
-                image_input = Image.open(uploaded_file)
-                st.image(image_input, caption="Uploaded Image", use_container_width=True)
+        uploaded_file = st.file_uploader("Upload a gesture photo (JPG, PNG)", type=['jpg', 'jpeg', 'png'])
+        if uploaded_file:
+            image_input = Image.open(uploaded_file)
+            st.image(image_input, caption="Uploaded Image", use_container_width=True)
         
         st.markdown('</div>', unsafe_allow_html=True)
         
-        # ASL Reference Expander directly in input section
         if os.path.exists("asl_alphabet_guide.png"):
             with st.expander("🖐️ Need help with signs? View ASL Reference Guide"):
-                st.image("asl_alphabet_guide.png", caption="American Sign Language (ASL) Hand Gestures Chart", use_container_width=True)
+                st.image("asl_alphabet_guide.png", caption="American Sign Language (ASL)", use_container_width=True)
         
     with col2:
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
@@ -283,7 +371,6 @@ if app_mode in ["📸 Camera / Live Capture", "🖼️ Upload Image"]:
             with st.spinner("Analyzing Hand Gesture..."):
                 top_pred, conf, top5_dict = predict(image_input, model, device)
                 
-                # Display Prediction Badge
                 st.markdown(f'''
                     <div style="text-align: center;">
                         <p style="margin:0; font-weight:600; color:#94a3b8;">Predicted Gesture</p>
@@ -292,7 +379,6 @@ if app_mode in ["📸 Camera / Live Capture", "🖼️ Upload Image"]:
                     </div>
                 ''', unsafe_allow_html=True)
                 
-                # Append to sentence button
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
                     if st.button("➕ Append to Sentence", use_container_width=True):
@@ -344,7 +430,7 @@ if app_mode in ["📸 Camera / Live Capture", "🖼️ Upload Image"]:
         elif not model:
             st.warning("Please ensure `best_model.pth` or `sign_language_model.pth` exists in the folder.")
         else:
-            st.info("👈 Capture or upload an image to see predictions.")
+            st.info("👈 Upload an image to see predictions.")
             
         st.markdown('</div>', unsafe_allow_html=True)
 
