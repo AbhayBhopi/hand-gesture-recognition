@@ -11,14 +11,7 @@ import numpy as np
 import sys
 import subprocess
 
-# Streamlit Cloud deployment fix: MediaPipe forces the installation of non-headless OpenCV 
-# which requires libGL.so.1. We catch the error and replace it with headless dynamically.
-try:
-    import cv2
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "uninstall", "-y", "opencv-python", "opencv-contrib-python"])
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "opencv-contrib-python-headless", "opencv-python-headless"])
-    import cv2
+import cv2
 from collections import Counter, deque
 import av
 from streamlit_webrtc import webrtc_streamer, RTCConfiguration, WebRtcMode
