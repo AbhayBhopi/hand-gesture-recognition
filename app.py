@@ -272,20 +272,31 @@ if app_mode == "📸 Camera / Live Capture":
             st.markdown("Click **START** below and grant camera permissions to begin live recognition.")
             
             # TURN and STUN Server Configuration for Cloud WebRTC Traversal
-            # Uses global relay with TCP fallback on port 443 to bypass cloud container NAT
+            # Uses active authenticated Metered global relay with TCP port 443 fallback
             RTC_CONFIGURATION = RTCConfiguration(
                 {
                     "iceServers": [
                         {"urls": ["stun:stun.l.google.com:19302"]},
                         {"urls": ["stun:stun.relay.metered.ca:80"]},
                         {
-                            "urls": [
-                                "turn:global.relay.metered.ca:80",
-                                "turn:global.relay.metered.ca:443",
-                                "turns:global.relay.metered.ca:443?transport=tcp",
-                            ],
-                            "username": "openrelayproject",
-                            "credential": "openrelayproject",
+                            "urls": ["turn:global.relay.metered.ca:80"],
+                            "username": "4d3a01f2d43c261926a6ca28",
+                            "credential": "5FMXSsQM6ms0faRT",
+                        },
+                        {
+                            "urls": ["turn:global.relay.metered.ca:80?transport=tcp"],
+                            "username": "4d3a01f2d43c261926a6ca28",
+                            "credential": "5FMXSsQM6ms0faRT",
+                        },
+                        {
+                            "urls": ["turn:global.relay.metered.ca:443"],
+                            "username": "4d3a01f2d43c261926a6ca28",
+                            "credential": "5FMXSsQM6ms0faRT",
+                        },
+                        {
+                            "urls": ["turns:global.relay.metered.ca:443?transport=tcp"],
+                            "username": "4d3a01f2d43c261926a6ca28",
+                            "credential": "5FMXSsQM6ms0faRT",
                         },
                     ]
                 }
