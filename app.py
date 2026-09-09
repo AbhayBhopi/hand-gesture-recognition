@@ -305,15 +305,9 @@ if app_mode == "📸 Camera / Live Capture":
         with col1:
             st.markdown("Click **START** below and grant camera permissions to begin live recognition.")
             
-            # TURN Server Configuration for Cloud WebRTC Traversal
-            # Forces relay policy to immediately tunnel through port 443 TCP
+            # TURN and STUN Server Configuration for Cloud WebRTC Traversal
             RTC_CONFIGURATION = {
                 "iceServers": [
-                    {
-                        "urls": ["turn:global.relay.metered.ca:443?transport=tcp"],
-                        "username": "4d3a01f2d43c261926a6ca28",
-                        "credential": "5FMXSsQM6ms0faRT",
-                    },
                     {
                         "urls": ["turns:global.relay.metered.ca:443?transport=tcp"],
                         "username": "4d3a01f2d43c261926a6ca28",
@@ -330,8 +324,8 @@ if app_mode == "📸 Camera / Live Capture":
                         "credential": "5FMXSsQM6ms0faRT",
                     },
                     {"urls": ["stun:stun.relay.metered.ca:80"]},
-                ],
-                "iceTransportPolicy": "relay",
+                    {"urls": ["stun:stun.l.google.com:19302"]},
+                ]
             }
             
             # Initialize MediaPipe Tasks API safely (handles headless cloud environments without libEGL)
