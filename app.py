@@ -211,7 +211,8 @@ COOLDOWN_FRAMES = 30
 # ── Webcam component (JS-based, works on Streamlit Cloud) ──
 @st.cache_resource
 def _get_webcam_comp():
-    return components.declare_component("webcam_stream", path="webcam_component")
+    comp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webcam_component")
+    return components.declare_component("webcam_stream", path=comp_dir)
 
 # ── Model ──
 class SignLanguageCNN(nn.Module):
