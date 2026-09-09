@@ -1,3 +1,37 @@
+# Monkey-patch Python 3.14 asyncio DatagramTransport & aioice timer issues on cloud
+try:
+    import asyncio.selector_events
+    _orig_sendto = asyncio.selector_events._SelectorDatagramTransport.sendto
+    def _safe_sendto(self, data, addr=None):
+        if getattr(self, '_sock', None) is None:
+            return 0
+        try:
+            return _orig_sendto(self, data, addr)
+        except Exception:
+            return 0
+    asyncio.selector_events._SelectorDatagramTransport.sendto = _safe_sendto
+
+    _orig_fatal = asyncio.selector_events._SelectorDatagramTransport._fatal_error
+    def _safe_fatal(self, exc, message='Fatal error on transport'):
+        if getattr(self, '_loop', None) is None:
+            return
+        try:
+            return _orig_fatal(self, exc, message)
+        except Exception:
+            return
+    asyncio.selector_events._SelectorDatagramTransport._fatal_error = _safe_fatal
+
+    import aioice.stun
+    _orig_retry = aioice.stun.Transaction._Transaction__retry
+    def _safe_retry(self):
+        try:
+            return _orig_retry(self)
+        except Exception:
+            return
+    aioice.stun.Transaction._Transaction__retry = _safe_retry
+except Exception:
+    pass
+
 import os
 import torch
 import torch.nn as nn
@@ -271,36 +305,34 @@ if app_mode == "📸 Camera / Live Capture":
         with col1:
             st.markdown("Click **START** below and grant camera permissions to begin live recognition.")
             
-            # TURN and STUN Server Configuration for Cloud WebRTC Traversal
-            # Uses active authenticated Metered global relay with TCP port 443 fallback
-            RTC_CONFIGURATION = RTCConfiguration(
-                {
-                    "iceServers": [
-                        {"urls": ["stun:stun.l.google.com:19302"]},
-                        {"urls": ["stun:stun.relay.metered.ca:80"]},
-                        {
-                            "urls": ["turn:global.relay.metered.ca:80"],
-                            "username": "4d3a01f2d43c261926a6ca28",
-                            "credential": "5FMXSsQM6ms0faRT",
-                        },
-                        {
-                            "urls": ["turn:global.relay.metered.ca:80?transport=tcp"],
-                            "username": "4d3a01f2d43c261926a6ca28",
-                            "credential": "5FMXSsQM6ms0faRT",
-                        },
-                        {
-                            "urls": ["turn:global.relay.metered.ca:443"],
-                            "username": "4d3a01f2d43c261926a6ca28",
-                            "credential": "5FMXSsQM6ms0faRT",
-                        },
-                        {
-                            "urls": ["turns:global.relay.metered.ca:443?transport=tcp"],
-                            "username": "4d3a01f2d43c261926a6ca28",
-                            "credential": "5FMXSsQM6ms0faRT",
-                        },
-                    ]
-                }
-            )
+            # TURN Server Configuration for Cloud WebRTC Traversal
+            # Forces relay policy to immediately tunnel through port 443 TCP
+            RTC_CONFIGURATION = {
+                "iceServers": [
+                    {
+                        "urls": ["turn:global.relay.metered.ca:443?transport=tcp"],
+                        "username": "4d3a01f2d43c261926a6ca28",
+                        "credential": "5FMXSsQM6ms0faRT",
+                    },
+                    {
+                        "urls": ["turns:global.relay.metered.ca:443?transport=tcp"],
+                        "username": "4d3a01f2d43c261926a6ca28",
+                        "credential": "5FMXSsQM6ms0faRT",
+                    },
+                    {
+                        "urls": ["turn:global.relay.metered.ca:80?transport=tcp"],
+                        "username": "4d3a01f2d43c261926a6ca28",
+                        "credential": "5FMXSsQM6ms0faRT",
+                    },
+                    {
+                        "urls": ["turn:global.relay.metered.ca:80"],
+                        "username": "4d3a01f2d43c261926a6ca28",
+                        "credential": "5FMXSsQM6ms0faRT",
+                    },
+                    {"urls": ["stun:stun.relay.metered.ca:80"]},
+                ],
+                "iceTransportPolicy": "relay",
+            }
             
             # Initialize MediaPipe Tasks API safely (handles headless cloud environments without libEGL)
             hands_detector = None
