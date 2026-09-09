@@ -33,6 +33,8 @@ except Exception:
     pass
 
 import os
+import queue
+import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -42,635 +44,494 @@ import streamlit as st
 import plotly.express as px
 import pandas as pd
 import numpy as np
-import sys
-import subprocess
-
-import cv2
 from collections import Counter, deque
+import cv2
 import av
-from streamlit_webrtc import webrtc_streamer, RTCConfiguration, WebRtcMode
+from streamlit_webrtc import webrtc_streamer, WebRtcMode
 import mediapipe as mp
+import streamlit.components.v1 as components
 
-# Set Streamlit Page Configuration
+# Page config
 st.set_page_config(
-    page_title="AI Hand Gesture Recognition | Silent Voice Translator",
+    page_title="Two-Way Sign Language Communicator",
     page_icon="🤟",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for Modern Dark & Glassmorphism Aesthetic
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700;800&display=swap');
-
-    html, body, [class*="css"] {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-    }
-
-    .main {
-        background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
-        color: #f8fafc;
-    }
-
-    .stApp {
-        background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
-    }
-
-    /* Glassmorphism Card Style */
-    .glass-card {
-        background: rgba(30, 41, 59, 0.7);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 16px;
-        padding: 24px;
-        margin-bottom: 20px;
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-    }
-
-    .hero-header {
-        background: linear-gradient(90deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        font-weight: 800;
-        font-size: 2.8rem !important;
-        letter-spacing: -0.02em;
-        margin-bottom: 0.2rem;
-    }
-
-    .sub-header {
-        color: #94a3b8;
-        font-size: 1.1rem;
-        font-weight: 400;
-        margin-bottom: 1.5rem;
-    }
-
-    /* Prediction Result Highlight Badge */
-    .prediction-badge {
-        display: inline-block;
-        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-        color: #ffffff;
-        font-weight: 800;
-        font-size: 2.5rem;
-        padding: 12px 32px;
-        border-radius: 16px;
-        box-shadow: 0 0 20px rgba(99, 102, 241, 0.5);
-        text-align: center;
-        margin: 10px 0;
-    }
-
-    .confidence-badge {
-        font-size: 1.1rem;
-        color: #38bdf8;
-        font-weight: 600;
-    }
-
-    /* Text Display Box for Sentence */
-    .sentence-box {
-        background: rgba(15, 23, 42, 0.8);
-        border: 2px solid #6366f1;
-        border-radius: 12px;
-        padding: 18px;
-        font-size: 1.8rem;
-        font-weight: 700;
-        letter-spacing: 0.05em;
-        color: #38bdf8;
-        min-height: 70px;
-        word-wrap: break-word;
-        box-shadow: inset 0 2px 8px rgba(0,0,0,0.5);
-    }
-
-    /* Sidebar Styling */
-    section[data-testid="stSidebar"] {
-        background-color: rgba(15, 23, 42, 0.95) !important;
-        border-right: 1px solid rgba(255, 255, 255, 0.08);
-    }
-
-    /* Streamlit Buttons Customization */
-    .stButton>button {
-        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-        color: white;
-        font-weight: 600;
-        border: none;
-        border-radius: 10px;
-        padding: 0.6rem 1.2rem;
-        transition: all 0.3s ease;
-    }
-
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
-    }
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700;800&display=swap');
+html,body,[class*="css"]{font-family:'Plus Jakarta Sans',sans-serif;}
+.main,.stApp{background:linear-gradient(135deg,#0f172a 0%,#1e1b4b 50%,#0f172a 100%);}
+.glass-card{background:rgba(30,41,59,0.7);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px;margin-bottom:20px;box-shadow:0 8px 32px rgba(0,0,0,0.37);}
+.hero-header{background:linear-gradient(90deg,#6366f1,#a855f7,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-weight:800;font-size:2.8rem!important;letter-spacing:-0.02em;margin-bottom:0.2rem;}
+.sub-header{color:#94a3b8;font-size:1.1rem;font-weight:400;margin-bottom:1.5rem;}
+.prediction-badge{display:inline-block;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;font-weight:800;font-size:2.5rem;padding:12px 32px;border-radius:16px;box-shadow:0 0 20px rgba(99,102,241,0.5);text-align:center;margin:10px 0;}
+.confirmed-badge{display:inline-block;background:linear-gradient(135deg,#059669,#10b981);color:#fff;font-weight:800;font-size:2.5rem;padding:12px 32px;border-radius:16px;box-shadow:0 0 24px rgba(16,185,129,0.6);text-align:center;margin:10px 0;}
+.confidence-badge{font-size:1.1rem;color:#38bdf8;font-weight:600;}
+.sentence-box{background:rgba(15,23,42,0.8);border:2px solid #6366f1;border-radius:12px;padding:18px;font-size:1.8rem;font-weight:700;letter-spacing:0.05em;color:#38bdf8;min-height:70px;word-wrap:break-word;box-shadow:inset 0 2px 8px rgba(0,0,0,0.5);}
+.gesture-letter{text-align:center;font-size:1.3rem;font-weight:800;color:#a855f7;margin-top:6px;}
+.progress-bar-container{background:rgba(30,41,59,0.8);border-radius:8px;height:10px;margin:4px 0;overflow:hidden;}
+.progress-bar-fill{height:100%;border-radius:8px;transition:width 0.2s ease;}
+.status-dot-green{display:inline-block;width:10px;height:10px;border-radius:50%;background:#10b981;margin-right:6px;animation:blink 1s infinite;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:0.3;}}
+section[data-testid="stSidebar"]{background-color:rgba(15,23,42,0.95)!important;border-right:1px solid rgba(255,255,255,0.08);}
+.stButton>button{background:linear-gradient(135deg,#4f46e5,#7c3aed);color:white;font-weight:600;border:none;border-radius:10px;padding:0.6rem 1.2rem;transition:all 0.3s ease;}
+.stButton>button:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(99,102,241,0.4);}
 </style>
 """, unsafe_allow_html=True)
 
-# Define Classes
-CLASSES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 
-           'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 
-           'del', 'nothing', 'space']
+# ── Constants ──
+CLASSES = ['A','B','C','D','E','F','G','H','I','J','K','L','M',
+           'N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
+           'del','nothing','space']
+ALPHABET = [c for c in CLASSES if c not in ['del','nothing','space']]
+GESTURE_DIR = 'gestures'
+BUFFER_SIZE = 20
+HOLD_FRAMES = 18
+COOLDOWN_FRAMES = 30
+_pred_queue: queue.Queue = queue.Queue(maxsize=2)
 
-# PyTorch Model Architecture
+# ── Model ──
 class SignLanguageCNN(nn.Module):
     def __init__(self, num_classes=29):
-        super(SignLanguageCNN, self).__init__()
+        super().__init__()
         self.conv_layers = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2)
+            nn.Conv2d(3,32,3,padding=1),nn.ReLU(),nn.MaxPool2d(2),
+            nn.Conv2d(32,64,3,padding=1),nn.ReLU(),nn.MaxPool2d(2),
+            nn.Conv2d(64,128,3,padding=1),nn.ReLU(),nn.MaxPool2d(2),
         )
         self.fc_layers = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(128 * 16 * 16, 256),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(256, num_classes)
+            nn.Flatten(),nn.Linear(128*16*16,256),nn.ReLU(),nn.Dropout(0.5),nn.Linear(256,num_classes)
         )
+    def forward(self,x):
+        return self.fc_layers(self.conv_layers(x))
 
-    def forward(self, x):
-        x = self.conv_layers(x)
-        x = self.fc_layers(x)
-        return x
-
-# Cache Model Loader
 @st.cache_resource
 def load_trained_model():
-    model = SignLanguageCNN(num_classes=len(CLASSES))
-    pth_file = 'best_model.pth' if os.path.exists('best_model.pth') else 'sign_language_model.pth'
-    if os.path.exists(pth_file):
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        state_dict = torch.load(pth_file, map_location=device)
-        model.load_state_dict(state_dict)
-        model.to(device)
-        model.eval()
-        return model, device, pth_file
-    else:
-        return None, 'cpu', None
+    m = SignLanguageCNN(num_classes=len(CLASSES))
+    pth = 'best_model.pth' if os.path.exists('best_model.pth') else 'sign_language_model.pth'
+    if os.path.exists(pth):
+        dev = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        m.load_state_dict(torch.load(pth,map_location=dev))
+        m.to(dev); m.eval()
+        return m,dev,pth
+    return None,'cpu',None
 
-# Image Preprocessing Pipeline
-def preprocess_image(image):
-    if image.mode != 'RGB':
-        image = image.convert('RGB')
-    transform = transforms.Compose([
-        transforms.Resize((128, 128)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
-    ])
-    tensor = transform(image).unsqueeze(0)
-    return tensor
+_tf = transforms.Compose([
+    transforms.Resize((128,128)),
+    transforms.ToTensor(),
+    transforms.Normalize([0.5]*3,[0.5]*3)
+])
 
-# Perform Inference
-def predict(image, model, device):
-    tensor = preprocess_image(image).to(device)
+def predict(image,model,device):
+    if image.mode!='RGB': image=image.convert('RGB')
+    t=_tf(image).unsqueeze(0).to(device)
     with torch.no_grad():
-        outputs = model(tensor)
-        probabilities = F.softmax(outputs, dim=1)[0]
-        top_prob, top_idx = torch.max(probabilities, dim=0)
-    
-    top_pred = CLASSES[top_idx.item()]
-    conf = top_prob.item() * 100
-    
-    # Get top 5 predictions for visual bar chart
-    probs_np = probabilities.cpu().numpy()
-    top5_indices = np.argsort(probs_np)[::-1][:5]
-    top5_data = {CLASSES[idx]: float(probs_np[idx] * 100) for idx in top5_indices}
-    
-    return top_pred, conf, top5_data
+        probs=F.softmax(model(t),dim=1)[0]
+        top_prob,top_idx=torch.max(probs,0)
+    pred=CLASSES[top_idx.item()]; conf=top_prob.item()*100
+    pnp=probs.cpu().numpy()
+    top5={CLASSES[i]:float(pnp[i]*100) for i in np.argsort(pnp)[::-1][:5]}
+    return pred,conf,top5
 
-# Initialize Session State
-if 'sentence' not in st.session_state:
-    st.session_state.sentence = ""
-if 'history' not in st.session_state:
-    st.session_state.history = []
+model,device,pth_file=load_trained_model()
 
-# Load Model
-model, device, loaded_file = load_trained_model()
+# ── Session State ──
+for k,v in {'sentence':'','history':[],'pred_buffer':deque(maxlen=BUFFER_SIZE),
+             'hold_counter':0,'cooldown_counter':0,'last_confirmed':'',
+             'auto_append':True,'live_pred':'--','live_conf':0.0,'confirmed_letter':''}.items():
+    if k not in st.session_state: st.session_state[k]=v
 
-# Header Section
-st.markdown('<h1 class="hero-header">🤟 Silent Voice — Hand Gesture Recognition</h1>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Empowering Speech-Impaired Communication using Real-Time AI & Computer Vision</p>', unsafe_allow_html=True)
+# ── Helpers ──
+def speak_text(text):
+    c=text.replace('"','\\"').replace('\n',' ')
+    components.html(f'<script>var u=new SpeechSynthesisUtterance("{c}");u.rate=0.9;window.speechSynthesis.speak(u);</script>',height=0)
 
-# Sidebar Controls
+def gesture_path(letter):
+    p=os.path.join(GESTURE_DIR,f'{letter}.jpg')
+    return p if os.path.exists(p) else None
+
+def plotly_bar(top5):
+    df=pd.DataFrame({'Gesture':list(top5.keys()),'Probability (%)':list(top5.values())})
+    fig=px.bar(df,x='Probability (%)',y='Gesture',orientation='h',color='Probability (%)',
+               color_continuous_scale='Purples',text_auto='.1f')
+    fig.update_layout(paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)',font_color='#f8fafc',
+                      height=230,margin=dict(l=0,r=0,t=10,b=0),yaxis=dict(autorange='reversed'))
+    return fig
+
+# ── Sidebar ──
 with st.sidebar:
-    st.image("https://img.icons8.com/isometric-folders/100/sign-language.png", width=70)
-    st.title("⚙️ Control Panel")
-    
-    if model is not None:
-        st.success(f"✅ Model Loaded: `{loaded_file}`")
-        st.caption(f"Device: `{device.type.upper()}` | Classes: `{len(CLASSES)}`")
-    else:
-        st.error("❌ Model Checkpoint Not Found! (.pth file)")
-    
+    st.markdown("<div style='text-align:center;padding:10px 0 20px;'><div style='font-size:2.5rem;'>🤟</div><div style='font-weight:800;font-size:1.1rem;color:#a855f7;'>Sign Language</div><div style='font-size:0.85rem;color:#64748b;'>Communicator</div></div>",unsafe_allow_html=True)
+    app_mode=st.selectbox("Nav",[
+        "🏠 Dashboard","🎥 Live Communicator","📝 Text → Gesture",
+        "📷 Quick Snapshot","🖼️ Upload & Analyze","📖 ASL Reference Guide","📊 Model Info"
+    ],label_visibility="collapsed")
     st.divider()
-    app_mode = st.radio("Choose App Mode:", [
-        "📸 Camera / Live Capture",
-        "🖼️ Upload Image",
-        "💬 Sentence & Speech Builder",
-        "📖 ASL Sign Reference Guide",
-        "📊 Model Details & Architecture"
-    ])
-    
-    st.divider()
-    st.markdown("### 🔤 Sentence Controls")
-    if st.button("🧹 Clear Sentence", use_container_width=True):
-        st.session_state.sentence = ""
-        st.session_state.history = []
-        st.rerun()
+    if st.session_state.sentence:
+        st.markdown("**📝 Sentence**")
+        st.markdown(f'<div class="sentence-box" style="font-size:1rem;min-height:40px;">{st.session_state.sentence}</div>',unsafe_allow_html=True)
+        if st.button("🔊 Speak",key="sb_spk",width='stretch'): speak_text(st.session_state.sentence)
+        sc1,sc2=st.columns(2)
+        with sc1:
+            if st.button("⌫",key="sb_dl",width='stretch'): st.session_state.sentence=st.session_state.sentence[:-1]; st.rerun()
+        with sc2:
+            if st.button("🧹",key="sb_cl",width='stretch'): st.session_state.sentence=''; st.session_state.history=[]; st.rerun()
+        st.divider()
+    st.markdown(f"<small style='color:{'#10b981' if model else '#ef4444'};'>{'✅ Model loaded' if model else '⚠️ Model not found'}</small>",unsafe_allow_html=True)
 
-    st.divider()
-    # Sidebar quick reference popup
-    if os.path.exists("asl_alphabet_guide.png"):
-        with st.expander("📖 Quick ASL Cheat Sheet"):
-            st.image("asl_alphabet_guide.png", caption="ASL Alphabet Signs (A-Z)", use_container_width=True)
+# ─────────────────────────────────────────────────────────
+# DASHBOARD
+# ─────────────────────────────────────────────────────────
+if app_mode=="🏠 Dashboard":
+    st.markdown('<div class="hero-header">🤟 Sign Language Communicator</div>',unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">AI-Based Two-Way Real-Time Sign Language Communication System</div>',unsafe_allow_html=True)
+    c1,c2,c3,c4=st.columns(4)
+    for col,(icon,title,desc) in zip([c1,c2,c3,c4],[
+        ("🔤","29 Classes","A–Z + del, space, nothing"),("🧠","CNN Model","3 Conv Blocks + Dense"),
+        ("🎥","Live Stream","WebRTC Real-Time"),("🔊","Voice Output","Web Speech API")]):
+        with col:
+            st.markdown(f'<div class="glass-card" style="text-align:center;padding:16px;"><div style="font-size:2rem;">{icon}</div><div style="font-weight:700;color:#f8fafc;font-size:1rem;margin-top:6px;">{title}</div><div style="color:#94a3b8;font-size:0.8rem;">{desc}</div></div>',unsafe_allow_html=True)
+    st.markdown("---")
+    ca,cb=st.columns(2,gap="large")
+    with ca:
+        st.markdown('<div class="glass-card"><h3 style="color:#a855f7;">🎥 Gesture → Voice</h3><ol style="color:#cbd5e1;line-height:2.2;"><li>Open <b>Live Communicator</b></li><li>Click <b>START</b> and allow camera</li><li>Show a hand sign — hold it steady</li><li>Letter auto-confirms after ~0.7s</li><li>Click <b>🔊 Speak</b> to hear sentence</li></ol></div>',unsafe_allow_html=True)
+    with cb:
+        st.markdown('<div class="glass-card"><h3 style="color:#ec4899;">📝 Text → Gesture</h3><ol style="color:#cbd5e1;line-height:2.2;"><li>Open <b>Text → Gesture</b></li><li>Type any word or sentence</li><li>Click <b>Show Gestures</b></li><li>Each letter shows its ASL hand sign</li><li>Use <b>Animate</b> for a walkthrough</li></ol></div>',unsafe_allow_html=True)
+    if os.path.exists('asl_alphabet_guide.png'):
+        st.markdown('<div class="glass-card">',unsafe_allow_html=True)
+        st.subheader("📖 ASL Quick Reference")
+        st.image('asl_alphabet_guide.png',width='stretch')
+        st.markdown('</div>',unsafe_allow_html=True)
 
-# APP MODES IMPLEMENTATION
+# ─────────────────────────────────────────────────────────
+# LIVE COMMUNICATOR
+# ─────────────────────────────────────────────────────────
+elif app_mode=="🎥 Live Communicator":
+    hands_detector=None
+    try:
+        from mediapipe.tasks import python as _mpp
+        from mediapipe.tasks.python import vision as _mpv
+        if os.path.exists('hand_landmarker.task'):
+            hands_detector=_mpv.HandLandmarker.create_from_options(
+                _mpv.HandLandmarkerOptions(base_options=_mpp.BaseOptions(model_asset_path='hand_landmarker.task'),num_hands=1))
+    except Exception: pass
 
-# MODE 1: LIVE CAMERA RECOGNITION
-if app_mode == "📸 Camera / Live Capture":
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.subheader("🎥 Real-Time Continuous Live Stream Recognition")
-    st.markdown("<p style='color:#94a3b8;'>Continuously stream your video to translate hand signs into text in real time.</p>", unsafe_allow_html=True)
-    
-    cam_tab1, cam_tab2 = st.tabs(["🎥 Continuous Live Stream", "📷 Instant Camera Snapshot"])
-    
-    with cam_tab1:
-        col1, col2 = st.columns([1.1, 1], gap="medium")
-        
-        with col1:
-            st.markdown("Click **START** below and grant camera permissions to begin live recognition.")
-            
-            # TURN and STUN Server Configuration for Cloud WebRTC Traversal
-            RTC_CONFIGURATION = {
-                "iceServers": [
-                    {
-                        "urls": ["turns:global.relay.metered.ca:443?transport=tcp"],
-                        "username": "4d3a01f2d43c261926a6ca28",
-                        "credential": "5FMXSsQM6ms0faRT",
-                    },
-                    {
-                        "urls": ["turn:global.relay.metered.ca:80?transport=tcp"],
-                        "username": "4d3a01f2d43c261926a6ca28",
-                        "credential": "5FMXSsQM6ms0faRT",
-                    },
-                    {
-                        "urls": ["turn:global.relay.metered.ca:80"],
-                        "username": "4d3a01f2d43c261926a6ca28",
-                        "credential": "5FMXSsQM6ms0faRT",
-                    },
-                    {"urls": ["stun:stun.relay.metered.ca:80"]},
-                    {"urls": ["stun:stun.l.google.com:19302"]},
-                ]
-            }
-            
-            # Initialize MediaPipe Tasks API safely (handles headless cloud environments without libEGL)
-            hands_detector = None
+    HAND_CONN=[(0,1),(1,2),(2,3),(3,4),(5,6),(6,7),(7,8),(9,10),(10,11),(11,12),
+               (13,14),(14,15),(15,16),(17,18),(18,19),(19,20),(0,5),(5,9),(9,13),(13,17),(0,17)]
+
+    RTC_CONFIGURATION={
+        "iceServers":[
+            {"urls":["turns:global.relay.metered.ca:443?transport=tcp"],"username":"4d3a01f2d43c261926a6ca28","credential":"5FMXSsQM6ms0faRT"},
+            {"urls":["turn:global.relay.metered.ca:80?transport=tcp"],"username":"4d3a01f2d43c261926a6ca28","credential":"5FMXSsQM6ms0faRT"},
+            {"urls":["turn:global.relay.metered.ca:80"],"username":"4d3a01f2d43c261926a6ca28","credential":"5FMXSsQM6ms0faRT"},
+            {"urls":["stun:stun.relay.metered.ca:80"]},
+            {"urls":["stun:stun.l.google.com:19302"]},
+        ]
+    }
+
+    col_stream,col_panel=st.columns([1.2,1],gap="medium")
+
+    with col_stream:
+        st.markdown('<div class="glass-card">',unsafe_allow_html=True)
+        st.markdown("### 📷 Live Camera Feed")
+        st.markdown("<small style='color:#94a3b8;'>Click <b>START</b> → allow camera → hold your hand sign steady.</small>",unsafe_allow_html=True)
+        ac,_=st.columns([1,2])
+        with ac:
+            st.session_state.auto_append=st.toggle("Auto-add letters",value=st.session_state.auto_append,
+                help="Confirmed gestures auto-append to sentence after holding ~0.7s")
+
+        def video_frame_callback(frame):
+            if model is None: return frame
+            img=frame.to_ndarray(format="bgr24")
+            rgb=cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
+            pred,conf,_=predict(Image.fromarray(rgb),model,device)
+            if hands_detector is not None:
+                try:
+                    res=hands_detector.detect(mp.Image(image_format=mp.ImageFormat.SRGB,data=rgb))
+                    if res.hand_landmarks:
+                        for lms in res.hand_landmarks:
+                            h,w=img.shape[:2]
+                            pts=[(int(l.x*w),int(l.y*h)) for l in lms]
+                            for a,b in HAND_CONN: cv2.line(img,pts[a],pts[b],(99,102,241),2)
+                            for pt in pts: cv2.circle(img,pt,4,(168,85,247),-1)
+                except Exception: pass
+            try: _pred_queue.put_nowait((pred,conf))
+            except queue.Full: pass
+            disp=pred if pred not in('nothing',) else "No hand"
+            col=(0,255,128) if pred not in('nothing','del','space') else (255,120,0)
+            cv2.rectangle(img,(0,0),(img.shape[1],80),(0,0,0),-1)
+            cv2.putText(img,f"{disp}  {conf:.0f}%",(16,54),cv2.FONT_HERSHEY_DUPLEX,1.4,col,2,cv2.LINE_AA)
+            return av.VideoFrame.from_ndarray(img,format="bgr24")
+
+        webrtc_streamer(key="live-comm",mode=WebRtcMode.SENDRECV,rtc_configuration=RTC_CONFIGURATION,
+                        video_frame_callback=video_frame_callback,
+                        media_stream_constraints={"video":True,"audio":False},async_processing=True)
+        st.markdown('</div>',unsafe_allow_html=True)
+
+    with col_panel:
+        # Drain queue
+        while not _pred_queue.empty():
             try:
-                from mediapipe.tasks import python
-                from mediapipe.tasks.python import vision
-                if os.path.exists('hand_landmarker.task'):
-                    base_options = python.BaseOptions(model_asset_path='hand_landmarker.task')
-                    options = vision.HandLandmarkerOptions(base_options=base_options, num_hands=1)
-                    hands_detector = vision.HandLandmarker.create_from_options(options)
-            except Exception:
-                hands_detector = None
-            
-            # Hand Skeleton Connections
-            HAND_CONNECTIONS = [(0, 1), (1, 2), (2, 3), (3, 4), (5, 6), (6, 7), (7, 8), (9, 10), (10, 11), (11, 12), (13, 14), (14, 15), (15, 16), (17, 18), (18, 19), (19, 20), (0, 5), (5, 9), (9, 13), (13, 17), (0, 17)]
-            
-            def video_frame_callback(frame):
-                img = frame.to_ndarray(format="bgr24")
-                
-                rgb_frame = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                pil_image = Image.fromarray(rgb_frame)
-                
-                # 1. Predict Gesture using PyTorch CNN Model
-                top_pred, conf, _ = predict(pil_image, model, device)
-                display_pred = top_pred if conf >= 50.0 and top_pred != 'nothing' else "No hand detected"
-                
-                # 2. Extract and Draw MediaPipe Hand Landmarks if detector loaded successfully
-                if hands_detector is not None:
-                    try:
-                        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
-                        detection_result = hands_detector.detect(mp_image)
-                        if detection_result.hand_landmarks:
-                            for hand_landmarks in detection_result.hand_landmarks:
-                                h, w, _ = img.shape
-                                points = []
-                                for lm in hand_landmarks:
-                                    cx, cy = int(lm.x * w), int(lm.y * h)
-                                    points.append((cx, cy))
-                                    cv2.circle(img, (cx, cy), 5, (121, 22, 76), -1)
-                                    cv2.circle(img, (cx, cy), 2, (250, 44, 250), -1)
-                                for connection in HAND_CONNECTIONS:
-                                    pt1 = points[connection[0]]
-                                    pt2 = points[connection[1]]
-                                    cv2.line(img, pt1, pt2, (121, 22, 76), 2)
-                        else:
-                            display_pred = "No hand detected"
-                    except Exception:
-                        pass
-                
-                # Overlay text prediction on the frame
-                box_color = (0, 255, 0) if display_pred != "No hand detected" else (255, 0, 0)
-                cv2.rectangle(img, (0, 0), (img.shape[1], 80), (0, 0, 0), -1)
-                cv2.putText(img, f"Gesture: {display_pred}", (20, 50), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 1.2, box_color, 3, cv2.LINE_AA)
-                
-                return av.VideoFrame.from_ndarray(img, format="bgr24")
+                p,c=_pred_queue.get_nowait()
+                st.session_state.live_pred=p; st.session_state.live_conf=c
+                st.session_state.pred_buffer.append(p)
+            except queue.Empty: break
 
-            webrtc_streamer(
-                key="gesture-recognition",
-                mode=WebRtcMode.SENDRECV,
-                rtc_configuration=RTC_CONFIGURATION,
-                video_frame_callback=video_frame_callback,
-                media_stream_constraints={"video": True, "audio": False},
-                async_processing=True
-            )
-            
-            if os.path.exists("asl_alphabet_guide.png"):
-                with st.expander("🖐️ Need help with signs? View ASL Reference Guide"):
-                    st.image("asl_alphabet_guide.png", caption="ASL Hand Gestures Chart")
-            
-        with col2:
-            st.subheader("🧠 Live Stream Output")
-            st.info("The AI continuously reads every camera frame, classifies the sign with the PyTorch model, and overlays the predicted gesture directly onto the live video feed!")
-            
-    with cam_tab2:
-        col_c1, col_c2 = st.columns([1.1, 1], gap="medium")
-        with col_c1:
-            captured_photo = st.camera_input("Take a snapshot of your hand gesture")
-        
-        with col_c2:
-            st.subheader("🧠 Recognition Result")
-            if captured_photo is not None and model:
-                img_pil = Image.open(captured_photo)
-                with st.spinner("Analyzing Hand Gesture..."):
-                    top_pred, conf, top5_dict = predict(img_pil, model, device)
-                    
-                    st.markdown(f'''
-                        <div style="text-align: center;">
-                            <p style="margin:0; font-weight:600; color:#94a3b8;">Predicted Gesture</p>
-                            <div class="prediction-badge">{top_pred}</div>
-                            <p class="confidence-badge">Confidence Score: {conf:.2f}%</p>
-                        </div>
-                    ''', unsafe_allow_html=True)
-                    
-                    col_b1, col_b2 = st.columns(2)
-                    with col_b1:
-                        if st.button("➕ Append to Sentence", key="cam_append"):
-                            if top_pred == 'space':
-                                st.session_state.sentence += " "
-                            elif top_pred == 'del':
-                                st.session_state.sentence = st.session_state.sentence[:-1]
-                            elif top_pred != 'nothing':
-                                st.session_state.sentence += top_pred
-                            st.session_state.history.append((top_pred, conf))
-                            st.success(f"Added '{top_pred}' to sentence!")
-                            st.rerun()
-                            
-                    with col_b2:
-                        if st.button("🔊 Speak Symbol", key="cam_speak"):
-                            word_to_speak = "Space" if top_pred == 'space' else ("Delete" if top_pred == 'del' else top_pred)
-                            js_speak = f"""
-                            <script>
-                                var msg = new SpeechSynthesisUtterance("{word_to_speak}");
-                                window.speechSynthesis.speak(msg);
-                            </script>
-                            """
-                            st.components.v1.html(js_speak, height=0)
-                    
-                    st.divider()
-                    st.markdown("#### 📈 Top 5 Class Probabilities")
-                    df_top5 = pd.DataFrame({
-                        'Gesture': list(top5_dict.keys()),
-                        'Probability (%)': list(top5_dict.values())
-                    })
-                    fig = px.bar(
-                        df_top5, 
-                        x='Probability (%)', 
-                        y='Gesture', 
-                        orientation='h', 
-                        color='Probability (%)',
-                        color_continuous_scale='Purples',
-                        text_auto='.1f'
-                    )
-                    fig.update_layout(
-                        paper_bgcolor='rgba(0,0,0,0)',
-                        plot_bgcolor='rgba(0,0,0,0)',
-                        font_color='#f8fafc',
-                        height=240,
-                        margin=dict(l=0, r=0, t=10, b=0),
-                        yaxis=dict(autorange="reversed")
-                    )
-                    st.plotly_chart(fig)
-            else:
-                st.info("👆 Click **Take Photo** in the camera viewfinder to test a single sign.")
-                
-    st.markdown('</div>', unsafe_allow_html=True)
+        buf=list(st.session_state.pred_buffer)
+        majority=Counter(buf).most_common(1)[0][0] if buf else ''
 
-# MODE 2: UPLOAD IMAGE INFERENCE
-elif app_mode == "🖼️ Upload Image":
-    col1, col2 = st.columns([1.1, 1], gap="medium")
-    
-    with col1:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.subheader("🖼️ Upload Gesture Input")
-        
-        image_input = None
-        uploaded_file = st.file_uploader("Upload a gesture photo (JPG, PNG)", type=['jpg', 'jpeg', 'png'])
-        if uploaded_file:
-            image_input = Image.open(uploaded_file)
-            st.image(image_input, caption="Uploaded Image", use_container_width=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        if os.path.exists("asl_alphabet_guide.png"):
-            with st.expander("🖐️ Need help with signs? View ASL Reference Guide"):
-                st.image("asl_alphabet_guide.png", caption="American Sign Language (ASL)", use_container_width=True)
-        
-    with col2:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.subheader("🧠 Recognition Result")
-        
-        if image_input and model:
-            with st.spinner("Analyzing Hand Gesture..."):
-                top_pred, conf, top5_dict = predict(image_input, model, device)
-                
-                st.markdown(f'''
-                    <div style="text-align: center;">
-                        <p style="margin:0; font-weight:600; color:#94a3b8;">Predicted Gesture</p>
-                        <div class="prediction-badge">{top_pred}</div>
-                        <p class="confidence-badge">Confidence Score: {conf:.2f}%</p>
-                    </div>
-                ''', unsafe_allow_html=True)
-                
-                col_btn1, col_btn2 = st.columns(2)
-                with col_btn1:
-                    if st.button("➕ Append to Sentence", use_container_width=True):
-                        if top_pred == 'space':
-                            st.session_state.sentence += " "
-                        elif top_pred == 'del':
-                            st.session_state.sentence = st.session_state.sentence[:-1]
-                        elif top_pred != 'nothing':
-                            st.session_state.sentence += top_pred
-                        st.session_state.history.append((top_pred, conf))
-                        st.success(f"Added '{top_pred}' to sentence!")
-                        
-                with col_btn2:
-                    if st.button("🔊 Speak Symbol", use_container_width=True):
-                        word_to_speak = "Space" if top_pred == 'space' else ("Delete" if top_pred == 'del' else top_pred)
-                        js_speak = f"""
-                        <script>
-                            var msg = new SpeechSynthesisUtterance("{word_to_speak}");
-                            window.speechSynthesis.speak(msg);
-                        </script>
-                        """
-                        st.components.v1.html(js_speak, height=0)
-                
-                st.divider()
-                st.markdown("#### 📈 Top 5 Class Probabilities")
-                df_top5 = pd.DataFrame({
-                    'Gesture': list(top5_dict.keys()),
-                    'Probability (%)': list(top5_dict.values())
-                })
-                fig = px.bar(
-                    df_top5, 
-                    x='Probability (%)', 
-                    y='Gesture', 
-                    orientation='h', 
-                    color='Probability (%)',
-                    color_continuous_scale='Purples',
-                    text_auto='.1f'
-                )
-                fig.update_layout(
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    font_color='#f8fafc',
-                    height=240,
-                    margin=dict(l=0, r=0, t=10, b=0),
-                    yaxis=dict(autorange="reversed")
-                )
-                st.plotly_chart(fig, use_container_width=True)
-                
-        elif not model:
-            st.warning("Please ensure `best_model.pth` or `sign_language_model.pth` exists in the folder.")
+        if majority and majority==st.session_state.live_pred and majority not in('nothing',):
+            st.session_state.hold_counter=min(st.session_state.hold_counter+1,HOLD_FRAMES+5)
         else:
-            st.info("👈 Upload an image to see predictions.")
-            
-        st.markdown('</div>', unsafe_allow_html=True)
+            st.session_state.hold_counter=max(st.session_state.hold_counter-2,0)
+        if st.session_state.cooldown_counter>0: st.session_state.cooldown_counter-=1
 
-# MODE 3: SENTENCE & SPEECH BUILDER
-elif app_mode == "💬 Sentence & Speech Builder":
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.subheader("🗣️ Live Sentence Construction & Speech Synthesizer")
-    
-    st.markdown("<p style='color:#94a3b8;'>Formulate words and sentences from detected gestures, then speak them out loud instantly.</p>", unsafe_allow_html=True)
-    
-    # Display Current Sentence
-    current_text = st.session_state.sentence if st.session_state.sentence else " (Empty sentence — add gestures or type below) "
-    st.markdown(f'<div class="sentence-box">{current_text}</div>', unsafe_allow_html=True)
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        if st.button("🔊 Speak Full Sentence", use_container_width=True):
-            if st.session_state.sentence.strip():
-                clean_text = st.session_state.sentence.replace('"', '\\"')
-                js_speak = f"""
-                <script>
-                    var msg = new SpeechSynthesisUtterance("{clean_text}");
-                    msg.rate = 0.9;
-                    window.speechSynthesis.speak(msg);
-                </script>
-                """
-                st.components.v1.html(js_speak, height=0)
-                st.toast("🔊 Speaking sentence...", icon="🗣️")
-            else:
-                st.warning("Sentence is empty!")
-                
-    with col2:
-        if st.button("⌫ Backspace (Delete)", use_container_width=True):
-            st.session_state.sentence = st.session_state.sentence[:-1]
-            st.rerun()
-            
-    with col3:
-        if st.button("␣ Add Space", use_container_width=True):
-            st.session_state.sentence += " "
-            st.rerun()
-            
-    with col4:
-        if st.button("🧹 Clear All", use_container_width=True):
-            st.session_state.sentence = ""
-            st.session_state.history = []
-            st.rerun()
-            
+        just_confirmed=False
+        if(st.session_state.hold_counter>=HOLD_FRAMES
+           and st.session_state.cooldown_counter==0
+           and majority not in('nothing','')):
+            st.session_state.confirmed_letter=majority
+            just_confirmed=True
+            st.session_state.hold_counter=0
+            st.session_state.cooldown_counter=COOLDOWN_FRAMES
+            if st.session_state.auto_append:
+                if majority=='del': st.session_state.sentence=st.session_state.sentence[:-1]
+                elif majority=='space': st.session_state.sentence+=' '
+                else: st.session_state.sentence+=majority
+                st.session_state.history.append((majority,st.session_state.live_conf))
+
+        # Prediction card
+        st.markdown('<div class="glass-card">',unsafe_allow_html=True)
+        st.markdown("### 🧠 Recognition Panel")
+        lp=st.session_state.live_pred; lc=st.session_state.live_conf
+        bdg="confirmed-badge" if just_confirmed else "prediction-badge"
+        dl=lp if lp not in('nothing',) else "—"
+        st.markdown(f'<div style="text-align:center;"><p style="margin:0;color:#94a3b8;font-size:.9rem;">Current Gesture</p><div class="{bdg}">{dl}</div><p class="confidence-badge">Confidence: {lc:.1f}%</p></div>',unsafe_allow_html=True)
+
+        hp=int((st.session_state.hold_counter/HOLD_FRAMES)*100)
+        if st.session_state.cooldown_counter>0: bc,lbl="#f59e0b","⏳ Cooldown"
+        elif hp>0: bc,lbl="#10b981",f"⏱ Hold {hp}%"
+        else: bc,lbl="#6366f1","Waiting..."
+        st.markdown(f'<div style="margin:8px 0 4px;"><small style="color:#94a3b8;">{lbl}</small><div class="progress-bar-container"><div class="progress-bar-fill" style="width:{min(hp,100)}%;background:{bc};"></div></div></div>',unsafe_allow_html=True)
+
+        st.markdown("---")
+        if st.session_state.confirmed_letter:
+            st.markdown(f'<div style="text-align:center;margin-bottom:8px;"><small style="color:#10b981;font-weight:600;"><span class="status-dot-green"></span>Last confirmed: <b>{st.session_state.confirmed_letter}</b></small></div>',unsafe_allow_html=True)
+        gp=gesture_path(lp) if lp and lp not in('nothing',) else None
+        if gp: st.image(gp,caption=f"ASL: {lp}",width='stretch')
+        st.markdown('</div>',unsafe_allow_html=True)
+
+        # Sentence panel
+        st.markdown('<div class="glass-card">',unsafe_allow_html=True)
+        st.markdown("### 📝 Sentence Builder")
+        sent=st.session_state.sentence if st.session_state.sentence else "(empty — start signing)"
+        st.markdown(f'<div class="sentence-box">{sent}</div>',unsafe_allow_html=True)
+        s1,s2,s3,s4=st.columns(4)
+        with s1:
+            if st.button("🔊 Speak",key="ls_spk",width='stretch'):
+                if st.session_state.sentence.strip(): speak_text(st.session_state.sentence)
+        with s2:
+            if st.button("␣ Space",key="ls_sp",width='stretch'): st.session_state.sentence+=' '; st.rerun()
+        with s3:
+            if st.button("⌫ Del",key="ls_dl",width='stretch'): st.session_state.sentence=st.session_state.sentence[:-1]; st.rerun()
+        with s4:
+            if st.button("🧹 Clear",key="ls_cl",width='stretch'): st.session_state.sentence=''; st.session_state.history=[]; st.session_state.confirmed_letter=''; st.rerun()
+        st.markdown('</div>',unsafe_allow_html=True)
+
+    if os.path.exists('asl_alphabet_guide.png'):
+        with st.expander("🖐️ ASL Reference Chart"): st.image('asl_alphabet_guide.png',width='stretch')
+
+# ─────────────────────────────────────────────────────────
+# TEXT → GESTURE
+# ─────────────────────────────────────────────────────────
+elif app_mode=="📝 Text → Gesture":
+    st.markdown('<div class="hero-header" style="font-size:2rem!important;">📝 Text → Gesture Translator</div>',unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Type a word or sentence — see the ASL hand sign for every letter.</div>',unsafe_allow_html=True)
+
+    st.markdown('<div class="glass-card">',unsafe_allow_html=True)
+    ic,bc=st.columns([3,1])
+    with ic:
+        user_text=st.text_input("msg","",placeholder="Type HELLO, GOOD MORNING…",label_visibility="collapsed")
+    with bc:
+        show_btn=st.button("👁 Show Gestures",width='stretch')
+    animate_btn=st.button("▶ Animate (Slideshow)",width='stretch')
+    st.markdown('</div>',unsafe_allow_html=True)
+
+    if user_text and (show_btn or animate_btn):
+        letters=[ch.upper() for ch in user_text if ch.upper() in CLASSES or ch==' ']
+        if not letters:
+            st.warning("No recognisable ASL letters found.")
+        else:
+            if show_btn:
+                st.markdown('<div class="glass-card">',unsafe_allow_html=True)
+                st.markdown(f"**Gestures for:** `{user_text.upper()}`")
+                cols_r=7
+                for grp in [letters[i:i+cols_r] for i in range(0,len(letters),cols_r)]:
+                    rcols=st.columns(len(grp))
+                    for col,lt in zip(rcols,grp):
+                        with col:
+                            if lt==' ':
+                                st.markdown('<div style="text-align:center;padding:20px 0;color:#64748b;">SPACE<br>_</div>',unsafe_allow_html=True)
+                            else:
+                                gp=gesture_path(lt)
+                                if gp: st.image(gp,width='stretch')
+                                st.markdown(f'<div class="gesture-letter">{lt}</div>',unsafe_allow_html=True)
+                st.markdown('</div>',unsafe_allow_html=True)
+
+            if animate_btn:
+                st.markdown('<div class="glass-card">',unsafe_allow_html=True)
+                st.markdown(f"### ▶ Animating: `{user_text.upper()}`")
+                ph=st.empty(); pp=st.empty()
+                for idx,lt in enumerate(letters):
+                    prog=int(((idx+1)/len(letters))*100)
+                    with ph.container():
+                        _,ac2,_=st.columns([1,2,1])
+                        with ac2:
+                            if lt==' ':
+                                st.markdown('<div style="text-align:center;padding:40px;font-size:3rem;">␣<br><span style="font-size:1rem;color:#94a3b8;">SPACE</span></div>',unsafe_allow_html=True)
+                            else:
+                                gp=gesture_path(lt)
+                                if gp: st.image(gp,width='stretch')
+                                st.markdown(f'<div style="text-align:center;font-size:2.5rem;font-weight:800;color:#a855f7;margin-top:8px;">{lt}</div><div style="text-align:center;color:#94a3b8;font-size:.9rem;">Letter {idx+1} of {len(letters)}</div>',unsafe_allow_html=True)
+                    pp.progress(prog,text=f"Showing: {lt if lt!=' ' else 'SPACE'}")
+                    time.sleep(1.1)
+                ph.success("✅ Slideshow complete!")
+                pp.empty()
+                st.markdown('</div>',unsafe_allow_html=True)
+    elif not user_text:
+        st.markdown('<div class="glass-card" style="text-align:center;padding:40px;"><div style="font-size:3rem;margin-bottom:12px;">✍️</div><div style="color:#94a3b8;font-size:1.1rem;">Type a word above, then click <b>Show Gestures</b> or <b>Animate</b>.</div></div>',unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────
+# QUICK SNAPSHOT
+# ─────────────────────────────────────────────────────────
+elif app_mode=="📷 Quick Snapshot":
+    st.markdown('<div class="glass-card">',unsafe_allow_html=True)
+    st.subheader("📷 Camera Snapshot Recognition")
+    c1,c2=st.columns([1.1,1],gap="medium")
+    with c1:
+        captured=st.camera_input("Take a snapshot of your hand gesture")
+    with c2:
+        st.subheader("🧠 Result")
+        if captured and model:
+            ip=Image.open(captured)
+            with st.spinner("Analysing…"):
+                top_pred,conf,top5=predict(ip,model,device)
+            st.markdown(f'<div style="text-align:center;"><p style="margin:0;color:#94a3b8;">Predicted Gesture</p><div class="prediction-badge">{top_pred}</div><p class="confidence-badge">Confidence: {conf:.2f}%</p></div>',unsafe_allow_html=True)
+            b1,b2=st.columns(2)
+            with b1:
+                if st.button("➕ Add to Sentence",key="sn_add",width='stretch'):
+                    if top_pred=='space': st.session_state.sentence+=' '
+                    elif top_pred=='del': st.session_state.sentence=st.session_state.sentence[:-1]
+                    elif top_pred!='nothing': st.session_state.sentence+=top_pred
+                    st.session_state.history.append((top_pred,conf)); st.success(f"Added '{top_pred}'")
+            with b2:
+                if st.button("🔊 Speak",key="sn_spk",width='stretch'): speak_text(top_pred)
+            st.divider(); st.markdown("#### 📈 Top 5")
+            st.plotly_chart(plotly_bar(top5),width='stretch')
+        elif not captured: st.info("👆 Click Take Photo to classify a gesture.")
+        elif not model: st.warning("Model not loaded.")
+    st.markdown('</div>',unsafe_allow_html=True)
+    if os.path.exists('asl_alphabet_guide.png'):
+        with st.expander("🖐️ ASL Reference Chart"): st.image('asl_alphabet_guide.png',width='stretch')
+
+# ─────────────────────────────────────────────────────────
+# UPLOAD & ANALYZE
+# ─────────────────────────────────────────────────────────
+elif app_mode=="🖼️ Upload & Analyze":
+    c1,c2=st.columns([1.1,1],gap="medium")
+    with c1:
+        st.markdown('<div class="glass-card">',unsafe_allow_html=True)
+        st.subheader("🖼️ Upload Gesture Image")
+        up=st.file_uploader("Upload gesture photo",type=['jpg','jpeg','png'])
+        if up:
+            ip=Image.open(up)
+            st.image(ip,caption="Uploaded Image",width='stretch')
+        st.markdown('</div>',unsafe_allow_html=True)
+        if os.path.exists('asl_alphabet_guide.png'):
+            with st.expander("🖐️ ASL Reference Chart"): st.image('asl_alphabet_guide.png',width='stretch')
+    with c2:
+        st.markdown('<div class="glass-card">',unsafe_allow_html=True)
+        st.subheader("🧠 Recognition Result")
+        if up and model:
+            with st.spinner("Analysing…"):
+                top_pred,conf,top5=predict(ip,model,device)
+            st.markdown(f'<div style="text-align:center;"><p style="margin:0;color:#94a3b8;">Predicted Gesture</p><div class="prediction-badge">{top_pred}</div><p class="confidence-badge">Confidence: {conf:.2f}%</p></div>',unsafe_allow_html=True)
+            b1,b2=st.columns(2)
+            with b1:
+                if st.button("➕ Add to Sentence",key="up_add",width='stretch'):
+                    if top_pred=='space': st.session_state.sentence+=' '
+                    elif top_pred=='del': st.session_state.sentence=st.session_state.sentence[:-1]
+                    elif top_pred!='nothing': st.session_state.sentence+=top_pred
+                    st.session_state.history.append((top_pred,conf)); st.success(f"Added '{top_pred}'")
+            with b2:
+                if st.button("🔊 Speak",key="up_spk",width='stretch'): speak_text(top_pred)
+            st.divider(); st.markdown("#### 📈 Top 5")
+            st.plotly_chart(plotly_bar(top5),width='stretch')
+        elif not model: st.warning("Model not loaded.")
+        else: st.info("👈 Upload an image to start.")
+        st.markdown('</div>',unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────
+# ASL REFERENCE GUIDE
+# ─────────────────────────────────────────────────────────
+elif app_mode=="📖 ASL Reference Guide":
+    st.markdown('<div class="glass-card">',unsafe_allow_html=True)
+    st.subheader("📖 ASL Alphabet Reference Chart")
+    if os.path.exists('asl_alphabet_guide.png'):
+        st.image('asl_alphabet_guide.png',caption="ASL Alphabet",width='stretch')
+    else: st.error("asl_alphabet_guide.png not found.")
     st.divider()
-    
-    # Interactive Quick Letter Keyboard
-    st.markdown("#### ⌨️ Quick Sign Virtual Keyboard")
-    cols = st.columns(10)
-    alphabet_keys = [c for c in CLASSES if c not in ['del', 'nothing', 'space']]
-    for idx, char in enumerate(alphabet_keys):
-        with cols[idx % 10]:
-            if st.button(char, key=f"key_{char}", use_container_width=True):
-                st.session_state.sentence += char
-                st.rerun()
+    st.subheader("🔤 Individual Gesture Cards (A–Z)")
+    rows_=[ALPHABET[i:i+9] for i in range(0,len(ALPHABET),9)]
+    for row_ in rows_:
+        rcols=st.columns(len(row_))
+        for col,lt in zip(rcols,row_):
+            with col:
+                gp=gesture_path(lt)
+                if gp: st.image(gp,width='stretch')
+                st.markdown(f'<div style="text-align:center;font-weight:700;color:#a855f7;">{lt}</div>',unsafe_allow_html=True)
+    st.markdown('</div>',unsafe_allow_html=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# MODE 4: ASL SIGN REFERENCE GUIDE (FULL SCREEN VIEW)
-elif app_mode == "📖 ASL Sign Reference Guide":
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.subheader("📖 American Sign Language (ASL) Alphabet Reference Chart")
-    st.markdown("<p style='color:#94a3b8;'>Use this reference guide to learn or verify the hand gesture for each letter (A through Z).</p>", unsafe_allow_html=True)
-    
-    if os.path.exists("asl_alphabet_guide.png"):
-        st.image("asl_alphabet_guide.png", caption="ASL Alphabet Hand Gesture Reference Chart", use_container_width=True)
-    else:
-        st.error("ASL Guide image not found.")
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# MODE 5: MODEL DETAILS & ARCHITECTURE
-elif app_mode == "📊 Model Details & Architecture":
-    col1, col2 = st.columns(2, gap="medium")
-    
-    with col1:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+# ─────────────────────────────────────────────────────────
+# MODEL INFO
+# ─────────────────────────────────────────────────────────
+elif app_mode=="📊 Model Info":
+    c1,c2=st.columns(2,gap="medium")
+    with c1:
+        st.markdown('<div class="glass-card">',unsafe_allow_html=True)
         st.subheader("🤖 Neural Network Architecture")
         st.markdown("""
-        **CNN Model Architecture (`SignLanguageCNN`)**:
-        - **Input Layer**: `(3, 128, 128)` RGB Image Tensor
-        - **Conv Block 1**: Conv2D (32 filters, 3x3) + ReLU + MaxPool2d (2x2)
-        - **Conv Block 2**: Conv2D (64 filters, 3x3) + ReLU + MaxPool2d (2x2)
-        - **Conv Block 3**: Conv2D (128 filters, 3x3) + ReLU + MaxPool2d (2x2)
-        - **Dense Layers**: 
-          - Flatten (`128 * 16 * 16` = 32,768 features)
-          - Dense (256 Neurons) + ReLU
-          - Dropout (`p=0.5`)
-          - Output Dense (29 Classes: `A-Z`, `del`, `nothing`, `space`)
+**CNN Model (`SignLanguageCNN`)**
+- **Input**: `(3, 128, 128)` RGB Tensor
+- **Conv Block 1**: Conv2D 32 filters → ReLU → MaxPool2D
+- **Conv Block 2**: Conv2D 64 filters → ReLU → MaxPool2D
+- **Conv Block 3**: Conv2D 128 filters → ReLU → MaxPool2D
+- **Flatten**: 128 × 16 × 16 = 32,768 features
+- **Dense**: 256 neurons + ReLU + Dropout(0.5)
+- **Output**: 29 classes (A–Z, del, nothing, space)
         """)
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-    with col2:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.subheader("📜 Supported ASL Classes (29)")
-        
-        st.markdown("""
-        The system recognizes **29 total classes**:
-        - **Alphabets**: `A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z`
-        - **Special Actions**: 
-          - `space` : Inserts a blank space between words
-          - `del` : Deletes the previously detected character
-          - `nothing` : Background / Idle position (ignored)
-        """)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>',unsafe_allow_html=True)
+    with c2:
+        st.markdown('<div class="glass-card">',unsafe_allow_html=True)
+        st.subheader("📜 Classes (29) & Stats")
+        st.markdown("**Alphabets (26):** `A B C D E F G H I J K L M N O P Q R S T U V W X Y Z`\n\n**Special:** `space` · `del` · `nothing`")
+        if model:
+            total=sum(p.numel() for p in model.parameters())
+            train=sum(p.numel() for p in model.parameters() if p.requires_grad)
+            st.metric("Total Parameters",f"{total:,}")
+            st.metric("Trainable Parameters",f"{train:,}")
+            st.metric("Device",str(device).upper())
+        st.markdown('</div>',unsafe_allow_html=True)
+    if st.session_state.history:
+        st.markdown('<div class="glass-card">',unsafe_allow_html=True)
+        st.subheader("📋 Recognition History")
+        df=pd.DataFrame(st.session_state.history,columns=['Gesture','Confidence (%)'])
+        df.index+=1
+        st.dataframe(df,width='stretch')
+        st.markdown('</div>',unsafe_allow_html=True)
 
-# Footer
-st.markdown("<br><hr><div style='text-align: center; color: #64748b; font-size: 0.9rem;'>AI-Based Hand Gesture Recognition System for Speech-Impaired People • Streamlit App</div>", unsafe_allow_html=True)
+# ── Footer ──
+st.markdown("<br><hr><div style='text-align:center;color:#64748b;font-size:.85rem;'>🤟 AI-Based Two-Way Sign Language Communication System &nbsp;|&nbsp; Streamlit + PyTorch + MediaPipe</div>",unsafe_allow_html=True)
+
