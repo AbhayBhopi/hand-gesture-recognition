@@ -33,6 +33,8 @@ except Exception:
     pass
 
 import os
+import base64
+import io
 import queue
 import time
 import torch
@@ -46,9 +48,6 @@ import pandas as pd
 import numpy as np
 from collections import Counter, deque
 import cv2
-import av
-from streamlit_webrtc import webrtc_streamer, WebRtcMode
-import mediapipe as mp
 import streamlit.components.v1 as components
 
 # Page config
@@ -208,7 +207,11 @@ GESTURE_DIR = 'gestures'
 BUFFER_SIZE = 20
 HOLD_FRAMES = 18
 COOLDOWN_FRAMES = 30
-_pred_queue: queue.Queue = queue.Queue(maxsize=2)
+
+# ── Webcam component (JS-based, works on Streamlit Cloud) ──
+@st.cache_resource
+def _get_webcam_comp():
+    return components.declare_component("webcam_stream", path="webcam_component")
 
 # ── Model ──
 class SignLanguageCNN(nn.Module):
@@ -258,7 +261,8 @@ model,device,pth_file=load_trained_model()
 # ── Session State ──
 for k,v in {'sentence':'','history':[],'pred_buffer':deque(maxlen=BUFFER_SIZE),
              'hold_counter':0,'cooldown_counter':0,'last_confirmed':'',
-             'auto_append':True,'live_pred':'--','live_conf':0.0,'confirmed_letter':''}.items():
+             'auto_append':True,'live_pred':'--','live_conf':0.0,
+             'confirmed_letter':'','live_pred_display':'—'}.items():
     if k not in st.session_state: st.session_state[k]=v
 
 # ── Helpers ──
@@ -452,142 +456,149 @@ if app_mode=="🏠 Dashboard":
         st.markdown('</div>', unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────
-# LIVE COMMUNICATOR
+# LIVE COMMUNICATOR  (JS webcam component — works on cloud)
 # ─────────────────────────────────────────────────────────
 elif app_mode=="🎥 Live Communicator":
-    hands_detector=None
-    try:
-        from mediapipe.tasks import python as _mpp
-        from mediapipe.tasks.python import vision as _mpv
-        if os.path.exists('hand_landmarker.task'):
-            hands_detector=_mpv.HandLandmarker.create_from_options(
-                _mpv.HandLandmarkerOptions(base_options=_mpp.BaseOptions(model_asset_path='hand_landmarker.task'),num_hands=1))
-    except Exception: pass
+    webcam_comp = _get_webcam_comp()
 
-    HAND_CONN=[(0,1),(1,2),(2,3),(3,4),(5,6),(6,7),(7,8),(9,10),(10,11),(11,12),
-               (13,14),(14,15),(15,16),(17,18),(18,19),(19,20),(0,5),(5,9),(9,13),(13,17),(0,17)]
-
-    RTC_CONFIGURATION={
-        "iceServers":[
-            {"urls":["turns:global.relay.metered.ca:443?transport=tcp"],"username":"4d3a01f2d43c261926a6ca28","credential":"5FMXSsQM6ms0faRT"},
-            {"urls":["turn:global.relay.metered.ca:80?transport=tcp"],"username":"4d3a01f2d43c261926a6ca28","credential":"5FMXSsQM6ms0faRT"},
-            {"urls":["turn:global.relay.metered.ca:80"],"username":"4d3a01f2d43c261926a6ca28","credential":"5FMXSsQM6ms0faRT"},
-            {"urls":["stun:stun.relay.metered.ca:80"]},
-            {"urls":["stun:stun.l.google.com:19302"]},
-        ]
-    }
-
-    col_stream,col_panel=st.columns([1.2,1],gap="medium")
+    col_stream, col_panel = st.columns([1.2, 1], gap="medium")
 
     with col_stream:
-        st.markdown('<div class="glass-card">',unsafe_allow_html=True)
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         st.markdown("### 📷 Live Camera Feed")
-        st.markdown("<small style='color:#94a3b8;'>Click <b>START</b> → allow camera → hold your hand sign steady.</small>",unsafe_allow_html=True)
-        ac,_=st.columns([1,2])
+        st.markdown(
+            "<small style='color:#94a3b8;'>Allow camera when prompted → hold your hand sign <b>steady for ~0.7s</b> to confirm a letter.</small>",
+            unsafe_allow_html=True
+        )
+        ac, _ = st.columns([1, 2])
         with ac:
-            st.session_state.auto_append=st.toggle("Auto-add letters",value=st.session_state.auto_append,
-                help="Confirmed gestures auto-append to sentence after holding ~0.7s")
+            st.session_state.auto_append = st.toggle(
+                "Auto-add letters", value=st.session_state.auto_append,
+                help="When ON, confirmed gestures are automatically added to the sentence"
+            )
 
-        def video_frame_callback(frame):
-            if model is None: return frame
-            img=frame.to_ndarray(format="bgr24")
-            rgb=cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
-            pred,conf,_=predict(Image.fromarray(rgb),model,device)
-            if hands_detector is not None:
-                try:
-                    res=hands_detector.detect(mp.Image(image_format=mp.ImageFormat.SRGB,data=rgb))
-                    if res.hand_landmarks:
-                        for lms in res.hand_landmarks:
-                            h,w=img.shape[:2]
-                            pts=[(int(l.x*w),int(l.y*h)) for l in lms]
-                            for a,b in HAND_CONN: cv2.line(img,pts[a],pts[b],(99,102,241),2)
-                            for pt in pts: cv2.circle(img,pt,4,(168,85,247),-1)
-                except Exception: pass
-            try: _pred_queue.put_nowait((pred,conf))
-            except queue.Full: pass
-            disp=pred if pred not in('nothing',) else "No hand"
-            col=(0,255,128) if pred not in('nothing','del','space') else (255,120,0)
-            cv2.rectangle(img,(0,0),(img.shape[1],80),(0,0,0),-1)
-            cv2.putText(img,f"{disp}  {conf:.0f}%",(16,54),cv2.FONT_HERSHEY_DUPLEX,1.4,col,2,cv2.LINE_AA)
-            return av.VideoFrame.from_ndarray(img,format="bgr24")
+        # ── Render JS webcam component ──
+        # It sends {frame: base64_jpeg, ts: timestamp} back to Python every 400ms.
+        # We pass the current AI prediction back so JS can overlay it on the video.
+        cam_result = webcam_comp(
+            prediction=st.session_state.live_pred_display,
+            confidence=float(st.session_state.live_conf),
+            confirmed=st.session_state.confirmed_letter or '',
+            key="webcam_main"
+        )
 
-        webrtc_streamer(key="live-comm",mode=WebRtcMode.SENDRECV,rtc_configuration=RTC_CONFIGURATION,
-                        video_frame_callback=video_frame_callback,
-                        media_stream_constraints={"video":True,"audio":False},async_processing=True)
-        st.markdown('</div>',unsafe_allow_html=True)
+        # ── Process received frame ──
+        if cam_result and isinstance(cam_result, dict) and cam_result.get('frame'):
+            try:
+                frame_bytes = base64.b64decode(cam_result['frame'])
+                frame_img   = Image.open(io.BytesIO(frame_bytes)).convert('RGB')
+                pred, conf, _ = predict(frame_img, model, device)
+                st.session_state.live_pred         = pred
+                st.session_state.live_conf         = conf
+                st.session_state.live_pred_display = pred if pred != 'nothing' else 'No hand'
+                st.session_state.pred_buffer.append(pred)
+            except Exception:
+                pass
+
+        st.markdown('</div>', unsafe_allow_html=True)
 
     with col_panel:
-        # Drain queue
-        while not _pred_queue.empty():
-            try:
-                p,c=_pred_queue.get_nowait()
-                st.session_state.live_pred=p; st.session_state.live_conf=c
-                st.session_state.pred_buffer.append(p)
-            except queue.Empty: break
+        # ── Gesture Stabilization (majority vote) ──
+        buf      = list(st.session_state.pred_buffer)
+        majority = Counter(buf).most_common(1)[0][0] if buf else ''
 
-        buf=list(st.session_state.pred_buffer)
-        majority=Counter(buf).most_common(1)[0][0] if buf else ''
-
-        if majority and majority==st.session_state.live_pred and majority not in('nothing',):
-            st.session_state.hold_counter=min(st.session_state.hold_counter+1,HOLD_FRAMES+5)
+        if majority and majority == st.session_state.live_pred and majority not in ('nothing',):
+            st.session_state.hold_counter = min(st.session_state.hold_counter + 1, HOLD_FRAMES + 5)
         else:
-            st.session_state.hold_counter=max(st.session_state.hold_counter-2,0)
-        if st.session_state.cooldown_counter>0: st.session_state.cooldown_counter-=1
+            st.session_state.hold_counter = max(st.session_state.hold_counter - 2, 0)
+        if st.session_state.cooldown_counter > 0:
+            st.session_state.cooldown_counter -= 1
 
-        just_confirmed=False
-        if(st.session_state.hold_counter>=HOLD_FRAMES
-           and st.session_state.cooldown_counter==0
-           and majority not in('nothing','')):
-            st.session_state.confirmed_letter=majority
-            just_confirmed=True
-            st.session_state.hold_counter=0
-            st.session_state.cooldown_counter=COOLDOWN_FRAMES
+        just_confirmed = False
+        if (st.session_state.hold_counter >= HOLD_FRAMES
+                and st.session_state.cooldown_counter == 0
+                and majority not in ('nothing', '')):
+            st.session_state.confirmed_letter = majority
+            just_confirmed = True
+            st.session_state.hold_counter      = 0
+            st.session_state.cooldown_counter  = COOLDOWN_FRAMES
             if st.session_state.auto_append:
-                if majority=='del': st.session_state.sentence=st.session_state.sentence[:-1]
-                elif majority=='space': st.session_state.sentence+=' '
-                else: st.session_state.sentence+=majority
-                st.session_state.history.append((majority,st.session_state.live_conf))
+                if majority == 'del':
+                    st.session_state.sentence = st.session_state.sentence[:-1]
+                elif majority == 'space':
+                    st.session_state.sentence += ' '
+                else:
+                    st.session_state.sentence += majority
+                st.session_state.history.append((majority, st.session_state.live_conf))
 
-        # Prediction card
-        st.markdown('<div class="glass-card">',unsafe_allow_html=True)
+        # ── Prediction card ──
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         st.markdown("### 🧠 Recognition Panel")
-        lp=st.session_state.live_pred; lc=st.session_state.live_conf
-        bdg="confirmed-badge" if just_confirmed else "prediction-badge"
-        dl=lp if lp not in('nothing',) else "—"
-        st.markdown(f'<div style="text-align:center;"><p style="margin:0;color:#94a3b8;font-size:.9rem;">Current Gesture</p><div class="{bdg}">{dl}</div><p class="confidence-badge">Confidence: {lc:.1f}%</p></div>',unsafe_allow_html=True)
+        lp  = st.session_state.live_pred
+        lc  = st.session_state.live_conf
+        bdg = "confirmed-badge" if just_confirmed else "prediction-badge"
+        dl  = lp if lp not in ('nothing', '--') else "—"
+        st.markdown(f"""
+        <div style="text-align:center;">
+            <p style="margin:0;color:#94a3b8;font-size:.9rem;">Current Gesture</p>
+            <div class="{bdg}">{dl}</div>
+            <p class="confidence-badge">Confidence: {lc:.1f}%</p>
+        </div>""", unsafe_allow_html=True)
 
-        hp=int((st.session_state.hold_counter/HOLD_FRAMES)*100)
-        if st.session_state.cooldown_counter>0: bc,lbl="#f59e0b","⏳ Cooldown"
-        elif hp>0: bc,lbl="#10b981",f"⏱ Hold {hp}%"
-        else: bc,lbl="#6366f1","Waiting..."
-        st.markdown(f'<div style="margin:8px 0 4px;"><small style="color:#94a3b8;">{lbl}</small><div class="progress-bar-container"><div class="progress-bar-fill" style="width:{min(hp,100)}%;background:{bc};"></div></div></div>',unsafe_allow_html=True)
+        hp = int((st.session_state.hold_counter / HOLD_FRAMES) * 100)
+        if st.session_state.cooldown_counter > 0:
+            bc, lbl = "#f59e0b", "⏳ Cooldown"
+        elif hp > 0:
+            bc, lbl = "#10b981", f"⏱ Hold {hp}%"
+        else:
+            bc, lbl = "#6366f1", "Waiting..."
+        st.markdown(f"""
+        <div style="margin:8px 0 4px;">
+            <small style="color:#94a3b8;">{lbl}</small>
+            <div class="progress-bar-container">
+                <div class="progress-bar-fill" style="width:{min(hp,100)}%;background:{bc};"></div>
+            </div>
+        </div>""", unsafe_allow_html=True)
 
         st.markdown("---")
         if st.session_state.confirmed_letter:
-            st.markdown(f'<div style="text-align:center;margin-bottom:8px;"><small style="color:#10b981;font-weight:600;"><span class="status-dot-green"></span>Last confirmed: <b>{st.session_state.confirmed_letter}</b></small></div>',unsafe_allow_html=True)
-        gp=gesture_path(lp) if lp and lp not in('nothing',) else None
-        if gp: st.image(gp,caption=f"ASL: {lp}",width='stretch')
-        st.markdown('</div>',unsafe_allow_html=True)
+            st.markdown(f"""
+            <div style="text-align:center;margin-bottom:8px;">
+                <small style="color:#10b981;font-weight:600;">
+                    <span class="status-dot-green"></span>Last confirmed: <b>{st.session_state.confirmed_letter}</b>
+                </small>
+            </div>""", unsafe_allow_html=True)
+        gp = gesture_path(lp) if lp and lp not in ('nothing', '--') else None
+        if gp:
+            st.image(gp, caption=f"ASL: {lp}", width='stretch')
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        # Sentence panel
-        st.markdown('<div class="glass-card">',unsafe_allow_html=True)
+        # ── Sentence panel ──
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         st.markdown("### 📝 Sentence Builder")
-        sent=st.session_state.sentence if st.session_state.sentence else "(empty — start signing)"
-        st.markdown(f'<div class="sentence-box">{sent}</div>',unsafe_allow_html=True)
-        s1,s2,s3,s4=st.columns(4)
+        sent = st.session_state.sentence if st.session_state.sentence else "(empty — start signing)"
+        st.markdown(f'<div class="sentence-box">{sent}</div>', unsafe_allow_html=True)
+        s1, s2, s3, s4 = st.columns(4)
         with s1:
-            if st.button("🔊 Speak",key="ls_spk",width='stretch'):
+            if st.button("🔊 Speak", key="ls_spk", width='stretch'):
                 if st.session_state.sentence.strip(): speak_text(st.session_state.sentence)
         with s2:
-            if st.button("␣ Space",key="ls_sp",width='stretch'): st.session_state.sentence+=' '; st.rerun()
+            if st.button("␣ Space", key="ls_sp", width='stretch'):
+                st.session_state.sentence += ' '; st.rerun()
         with s3:
-            if st.button("⌫ Del",key="ls_dl",width='stretch'): st.session_state.sentence=st.session_state.sentence[:-1]; st.rerun()
+            if st.button("⌫ Del", key="ls_dl", width='stretch'):
+                st.session_state.sentence = st.session_state.sentence[:-1]; st.rerun()
         with s4:
-            if st.button("🧹 Clear",key="ls_cl",width='stretch'): st.session_state.sentence=''; st.session_state.history=[]; st.session_state.confirmed_letter=''; st.rerun()
-        st.markdown('</div>',unsafe_allow_html=True)
+            if st.button("🧹 Clear", key="ls_cl", width='stretch'):
+                st.session_state.sentence = ''
+                st.session_state.history  = []
+                st.session_state.confirmed_letter = ''
+                st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
     if os.path.exists('asl_alphabet_guide.png'):
-        with st.expander("🖐️ ASL Reference Chart"): st.image('asl_alphabet_guide.png',width='stretch')
+        with st.expander("🖐️ ASL Reference Chart"):
+            st.image('asl_alphabet_guide.png', width='stretch')
 
 # ─────────────────────────────────────────────────────────
 # TEXT → GESTURE
