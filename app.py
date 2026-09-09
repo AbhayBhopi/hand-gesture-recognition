@@ -272,13 +272,17 @@ if app_mode == "📸 Camera / Live Capture":
             {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
         )
         
-        # Initialize MediaPipe Tasks API
-        from mediapipe.tasks import python
-        from mediapipe.tasks.python import vision
-        
-        base_options = python.BaseOptions(model_asset_path='hand_landmarker.task')
-        options = vision.HandLandmarkerOptions(base_options=base_options, num_hands=1)
-        hands_detector = vision.HandLandmarker.create_from_options(options)
+        # Initialize MediaPipe Tasks API safely (handles headless cloud environments without libEGL)
+        hands_detector = None
+        try:
+            from mediapipe.tasks import python
+            from mediapipe.tasks.python import vision
+            if os.path.exists('hand_landmarker.task'):
+                base_options = python.BaseOptions(model_asset_path='hand_landmarker.task')
+                options = vision.HandLandmarkerOptions(base_options=base_options, num_hands=1)
+                hands_detector = vision.HandLandmarker.create_from_options(options)
+        except Exception:
+            hands_detector = None
         
         # Hand Skeleton Connections
         HAND_CONNECTIONS = [(0, 1), (1, 2), (2, 3), (3, 4), (5, 6), (6, 7), (7, 8), (9, 10), (10, 11), (11, 12), (13, 14), (14, 15), (15, 16), (17, 18), (18, 19), (19, 20), (0, 5), (5, 9), (9, 13), (13, 17), (0, 17)]
@@ -289,33 +293,32 @@ if app_mode == "📸 Camera / Live Capture":
             rgb_frame = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             pil_image = Image.fromarray(rgb_frame)
             
-            # 1. Predict Gesture using PyTorch
+            # 1. Predict Gesture using PyTorch CNN Model
             top_pred, conf, _ = predict(pil_image, model, device)
             display_pred = top_pred if conf >= 50.0 and top_pred != 'nothing' else "No hand detected"
             
-            # 2. Extract and Draw MediaPipe Hand Landmarks manually using Tasks API
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
-            detection_result = hands_detector.detect(mp_image)
-            
-            if detection_result.hand_landmarks:
-                for hand_landmarks in detection_result.hand_landmarks:
-                    h, w, _ = img.shape
-                    points = []
-                    
-                    # Get pixel coordinates
-                    for lm in hand_landmarks:
-                        cx, cy = int(lm.x * w), int(lm.y * h)
-                        points.append((cx, cy))
-                        cv2.circle(img, (cx, cy), 5, (121, 22, 76), -1)
-                        cv2.circle(img, (cx, cy), 2, (250, 44, 250), -1)
-                        
-                    # Draw connecting skeleton lines
-                    for connection in HAND_CONNECTIONS:
-                        pt1 = points[connection[0]]
-                        pt2 = points[connection[1]]
-                        cv2.line(img, pt1, pt2, (121, 22, 76), 2)
-            else:
-                display_pred = "No hand detected"
+            # 2. Extract and Draw MediaPipe Hand Landmarks if detector loaded successfully
+            if hands_detector is not None:
+                try:
+                    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+                    detection_result = hands_detector.detect(mp_image)
+                    if detection_result.hand_landmarks:
+                        for hand_landmarks in detection_result.hand_landmarks:
+                            h, w, _ = img.shape
+                            points = []
+                            for lm in hand_landmarks:
+                                cx, cy = int(lm.x * w), int(lm.y * h)
+                                points.append((cx, cy))
+                                cv2.circle(img, (cx, cy), 5, (121, 22, 76), -1)
+                                cv2.circle(img, (cx, cy), 2, (250, 44, 250), -1)
+                            for connection in HAND_CONNECTIONS:
+                                pt1 = points[connection[0]]
+                                pt2 = points[connection[1]]
+                                cv2.line(img, pt1, pt2, (121, 22, 76), 2)
+                    else:
+                        display_pred = "No hand detected"
+                except Exception:
+                    pass
             
             # Overlay text prediction on the frame
             box_color = (0, 255, 0) if display_pred != "No hand detected" else (255, 0, 0)
