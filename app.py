@@ -63,12 +63,121 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700;800&display=swap');
 html,body,[class*="css"]{font-family:'Plus Jakarta Sans',sans-serif;}
-.main,.stApp{background:linear-gradient(135deg,#0f172a 0%,#1e1b4b 50%,#0f172a 100%);}
-.glass-card{background:rgba(30,41,59,0.7);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:24px;margin-bottom:20px;box-shadow:0 8px 32px rgba(0,0,0,0.37);}
-.hero-header{background:linear-gradient(90deg,#6366f1,#a855f7,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-weight:800;font-size:2.8rem!important;letter-spacing:-0.02em;margin-bottom:0.2rem;}
-.sub-header{color:#94a3b8;font-size:1.1rem;font-weight:400;margin-bottom:1.5rem;}
-.prediction-badge{display:inline-block;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;font-weight:800;font-size:2.5rem;padding:12px 32px;border-radius:16px;box-shadow:0 0 20px rgba(99,102,241,0.5);text-align:center;margin:10px 0;}
-.confirmed-badge{display:inline-block;background:linear-gradient(135deg,#059669,#10b981);color:#fff;font-weight:800;font-size:2.5rem;padding:12px 32px;border-radius:16px;box-shadow:0 0 24px rgba(16,185,129,0.6);text-align:center;margin:10px 0;}
+
+/* ── Animated gradient background ── */
+.main,.stApp{
+  background: linear-gradient(-45deg,#0f172a,#1e1b4b,#12163a,#0d1117);
+  background-size: 400% 400%;
+  animation: gradShift 12s ease infinite;
+}
+@keyframes gradShift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+
+/* ── Glassmorphism cards ── */
+.glass-card{
+  background:rgba(15,23,42,0.55);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border:1px solid rgba(99,102,241,0.18);
+  border-radius:20px;padding:28px;margin-bottom:22px;
+  box-shadow:0 8px 40px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.glass-card:hover{transform:translateY(-2px);box-shadow:0 12px 48px rgba(99,102,241,0.2);}
+
+/* ── Hero banner ── */
+.hero-banner{
+  position:relative; overflow:hidden;
+  background:linear-gradient(135deg,rgba(99,102,241,0.15) 0%,rgba(168,85,247,0.15) 50%,rgba(236,72,153,0.15) 100%);
+  border:1px solid rgba(99,102,241,0.3); border-radius:24px;
+  padding:48px 40px 36px; margin-bottom:28px;
+  box-shadow:0 0 60px rgba(99,102,241,0.15);
+}
+.hero-banner::before{
+  content:''; position:absolute; top:-80px; right:-80px;
+  width:300px; height:300px; border-radius:50%;
+  background:radial-gradient(circle,rgba(168,85,247,0.2) 0%,transparent 70%);
+}
+.hero-banner::after{
+  content:''; position:absolute; bottom:-60px; left:-60px;
+  width:200px; height:200px; border-radius:50%;
+  background:radial-gradient(circle,rgba(99,102,241,0.15) 0%,transparent 70%);
+}
+.hero-title{
+  background:linear-gradient(90deg,#818cf8 0%,#c084fc 40%,#f472b6 80%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  font-weight:800;font-size:3.2rem;letter-spacing:-0.03em;line-height:1.1;
+  margin-bottom:10px;
+}
+.hero-subtitle{color:#94a3b8;font-size:1.15rem;font-weight:400;max-width:600px;}
+.hero-tag{
+  display:inline-block;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.4);
+  color:#a5b4fc;font-size:0.75rem;font-weight:700;padding:3px 10px;border-radius:20px;
+  margin-right:8px;margin-top:12px;text-transform:uppercase;letter-spacing:0.08em;
+}
+
+/* ── Neon metric cards ── */
+.metric-card{
+  background:rgba(15,23,42,0.6);
+  border-radius:18px;padding:22px 16px;text-align:center;
+  border:1px solid rgba(255,255,255,0.06);
+  position:relative;overflow:hidden;
+  transition:transform 0.25s ease,box-shadow 0.25s ease;
+}
+.metric-card:hover{transform:translateY(-4px);}
+.metric-card .icon{font-size:2.2rem;margin-bottom:10px;display:block;}
+.metric-card .val{font-weight:800;font-size:1.5rem;color:#f8fafc;}
+.metric-card .lbl{color:#64748b;font-size:0.78rem;margin-top:4px;text-transform:uppercase;letter-spacing:0.06em;}
+.metric-card.purple{box-shadow:0 0 0 1px rgba(168,85,247,0.3),0 8px 32px rgba(168,85,247,0.15);}
+.metric-card.blue{box-shadow:0 0 0 1px rgba(56,189,248,0.3),0 8px 32px rgba(56,189,248,0.15);}
+.metric-card.pink{box-shadow:0 0 0 1px rgba(236,72,153,0.3),0 8px 32px rgba(236,72,153,0.15);}
+.metric-card.green{box-shadow:0 0 0 1px rgba(16,185,129,0.3),0 8px 32px rgba(16,185,129,0.15);}
+.metric-card.purple .val{color:#c084fc;}
+.metric-card.blue .val{color:#38bdf8;}
+.metric-card.pink .val{color:#f472b6;}
+.metric-card.green .val{color:#34d399;}
+
+/* ── Feature direction cards ── */
+.dir-card{
+  background:rgba(15,23,42,0.65);border-radius:20px;padding:28px;
+  height:100%;border:1px solid rgba(255,255,255,0.07);
+  transition:transform 0.2s ease,box-shadow 0.2s ease;
+}
+.dir-card:hover{transform:translateY(-4px);}
+.dir-card.left{border-top:3px solid #a855f7;box-shadow:0 0 30px rgba(168,85,247,0.12);}
+.dir-card.right{border-top:3px solid #ec4899;box-shadow:0 0 30px rgba(236,72,153,0.12);}
+.dir-card h3{font-size:1.3rem;font-weight:800;margin-bottom:16px;}
+.dir-card .step{
+  display:flex;align-items:flex-start;gap:12px;
+  margin-bottom:14px;padding:10px 14px;
+  background:rgba(255,255,255,0.03);border-radius:12px;
+  border:1px solid rgba(255,255,255,0.05);
+}
+.dir-card .step-num{
+  min-width:26px;height:26px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:0.75rem;
+  background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;
+}
+.dir-card.right .step-num{background:linear-gradient(135deg,#db2777,#ec4899);}
+.dir-card .step-text{color:#cbd5e1;font-size:0.88rem;line-height:1.5;}
+
+/* ── Flow arrows ── */
+.flow-step{
+  display:flex;flex-direction:column;align-items:center;text-align:center;
+  flex:1;position:relative;
+}
+.flow-step .f-icon{
+  width:52px;height:52px;border-radius:16px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.4rem;margin-bottom:8px;
+  background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.3);
+}
+.flow-step .f-label{color:#94a3b8;font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.07em;}
+.flow-arrow{color:rgba(99,102,241,0.5);font-size:1.4rem;padding:0 2px;display:flex;align-items:center;margin-bottom:28px;}
+
+/* ── Prediction badges ── */
+.prediction-badge{display:inline-block;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;font-weight:800;font-size:2.5rem;padding:12px 32px;border-radius:16px;box-shadow:0 0 20px rgba(99,102,241,0.5),0 0 60px rgba(99,102,241,0.2);text-align:center;margin:10px 0;}
+.confirmed-badge{display:inline-block;background:linear-gradient(135deg,#059669,#10b981);color:#fff;font-weight:800;font-size:2.5rem;padding:12px 32px;border-radius:16px;box-shadow:0 0 24px rgba(16,185,129,0.6),0 0 60px rgba(16,185,129,0.2);text-align:center;margin:10px 0;animation:confirmPop 0.3s ease;}
+@keyframes confirmPop{0%{transform:scale(0.9);}60%{transform:scale(1.08);}100%{transform:scale(1);}}
 .confidence-badge{font-size:1.1rem;color:#38bdf8;font-weight:600;}
 .sentence-box{background:rgba(15,23,42,0.8);border:2px solid #6366f1;border-radius:12px;padding:18px;font-size:1.8rem;font-weight:700;letter-spacing:0.05em;color:#38bdf8;min-height:70px;word-wrap:break-word;box-shadow:inset 0 2px 8px rgba(0,0,0,0.5);}
 .gesture-letter{text-align:center;font-size:1.3rem;font-weight:800;color:#a855f7;margin-top:6px;}
@@ -76,9 +185,17 @@ html,body,[class*="css"]{font-family:'Plus Jakarta Sans',sans-serif;}
 .progress-bar-fill{height:100%;border-radius:8px;transition:width 0.2s ease;}
 .status-dot-green{display:inline-block;width:10px;height:10px;border-radius:50%;background:#10b981;margin-right:6px;animation:blink 1s infinite;}
 @keyframes blink{0%,100%{opacity:1;}50%{opacity:0.3;}}
-section[data-testid="stSidebar"]{background-color:rgba(15,23,42,0.95)!important;border-right:1px solid rgba(255,255,255,0.08);}
-.stButton>button{background:linear-gradient(135deg,#4f46e5,#7c3aed);color:white;font-weight:600;border:none;border-radius:10px;padding:0.6rem 1.2rem;transition:all 0.3s ease;}
-.stButton>button:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(99,102,241,0.4);}
+
+/* ── Sidebar ── */
+section[data-testid="stSidebar"]{background:linear-gradient(180deg,rgba(9,11,24,0.98) 0%,rgba(15,23,42,0.98) 100%)!important;border-right:1px solid rgba(99,102,241,0.15);}
+
+/* ── Buttons ── */
+.stButton>button{background:linear-gradient(135deg,#4f46e5,#7c3aed);color:white;font-weight:600;border:none;border-radius:10px;padding:0.6rem 1.2rem;transition:all 0.25s ease;letter-spacing:0.02em;}
+.stButton>button:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(99,102,241,0.45);}
+
+/* ── Shimmer text ── */
+.shimmer{background:linear-gradient(90deg,#818cf8,#c084fc,#f472b6,#c084fc,#818cf8);background-size:200%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:shimmer 3s linear infinite;}
+@keyframes shimmer{0%{background-position:200%;}100%{background-position:-200%;}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -185,25 +302,154 @@ with st.sidebar:
 # DASHBOARD
 # ─────────────────────────────────────────────────────────
 if app_mode=="🏠 Dashboard":
-    st.markdown('<div class="hero-header">🤟 Sign Language Communicator</div>',unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">AI-Based Two-Way Real-Time Sign Language Communication System</div>',unsafe_allow_html=True)
-    c1,c2,c3,c4=st.columns(4)
-    for col,(icon,title,desc) in zip([c1,c2,c3,c4],[
-        ("🔤","29 Classes","A–Z + del, space, nothing"),("🧠","CNN Model","3 Conv Blocks + Dense"),
-        ("🎥","Live Stream","WebRTC Real-Time"),("🔊","Voice Output","Web Speech API")]):
+
+    # ── Hero Banner ──
+    st.markdown("""
+    <div class="hero-banner">
+        <div class="hero-title">🤟 Sign Language Communicator</div>
+        <div class="hero-subtitle">
+            AI-powered two-way real-time communication system — translate hand gestures into voice,<br>
+            and text into visual sign language guides. Breaking barriers, one sign at a time.
+        </div>
+        <div style="margin-top:16px;">
+            <span class="hero-tag">🧠 PyTorch CNN</span>
+            <span class="hero-tag">📷 WebRTC Live</span>
+            <span class="hero-tag">🤚 MediaPipe</span>
+            <span class="hero-tag">🔊 Web Speech API</span>
+            <span class="hero-tag">29 ASL Classes</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Neon Metric Cards ──
+    c1,c2,c3,c4 = st.columns(4)
+    cards = [
+        ("purple","🔤","29 Classes","A – Z + del, space, nothing"),
+        ("blue","🧠","CNN Model","3 Conv Blocks · 256 Dense"),
+        ("pink","🎥","Live Stream","WebRTC Real-Time"),
+        ("green","🔊","Voice Output","Web Speech API"),
+    ]
+    for col,(color,icon,val,lbl) in zip([c1,c2,c3,c4],cards):
         with col:
-            st.markdown(f'<div class="glass-card" style="text-align:center;padding:16px;"><div style="font-size:2rem;">{icon}</div><div style="font-weight:700;color:#f8fafc;font-size:1rem;margin-top:6px;">{title}</div><div style="color:#94a3b8;font-size:0.8rem;">{desc}</div></div>',unsafe_allow_html=True)
-    st.markdown("---")
-    ca,cb=st.columns(2,gap="large")
-    with ca:
-        st.markdown('<div class="glass-card"><h3 style="color:#a855f7;">🎥 Gesture → Voice</h3><ol style="color:#cbd5e1;line-height:2.2;"><li>Open <b>Live Communicator</b></li><li>Click <b>START</b> and allow camera</li><li>Show a hand sign — hold it steady</li><li>Letter auto-confirms after ~0.7s</li><li>Click <b>🔊 Speak</b> to hear sentence</li></ol></div>',unsafe_allow_html=True)
-    with cb:
-        st.markdown('<div class="glass-card"><h3 style="color:#ec4899;">📝 Text → Gesture</h3><ol style="color:#cbd5e1;line-height:2.2;"><li>Open <b>Text → Gesture</b></li><li>Type any word or sentence</li><li>Click <b>Show Gestures</b></li><li>Each letter shows its ASL hand sign</li><li>Use <b>Animate</b> for a walkthrough</li></ol></div>',unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="metric-card {color}">
+                <span class="icon">{icon}</span>
+                <div class="val">{val}</div>
+                <div class="lbl">{lbl}</div>
+            </div>""", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── System Flow Diagram ──
+    st.markdown("""
+    <div class="glass-card" style="padding:28px 32px;">
+        <div style="text-align:center;margin-bottom:24px;">
+            <span class="shimmer" style="font-size:1.1rem;font-weight:700;">⚡ How It Works</span>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:center;flex-wrap:nowrap;gap:0;overflow-x:auto;">
+            <div class="flow-step">
+                <div class="f-icon">📷</div>
+                <div class="f-label">Camera</div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+                <div class="f-icon">🤚</div>
+                <div class="f-label">MediaPipe</div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+                <div class="f-icon">🧠</div>
+                <div class="f-label">CNN Model</div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+                <div class="f-icon">🔤</div>
+                <div class="f-label">Stabilize</div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+                <div class="f-icon">📝</div>
+                <div class="f-label">Sentence</div>
+            </div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-step">
+                <div class="f-icon">🔊</div>
+                <div class="f-label">Voice</div>
+            </div>
+        </div>
+        <div style="text-align:center;margin-top:10px;">
+            <small style="color:#475569;">Direction 1: Gesture → Voice &nbsp;|&nbsp; Direction 2: Text → Gesture Images (reverse flow)</small>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Direction Cards ──
+    da, db = st.columns(2, gap="large")
+    with da:
+        st.markdown("""
+        <div class="dir-card left">
+            <h3 style="color:#c084fc;">🎥 Gesture → Voice</h3>
+            <div class="step">
+                <div class="step-num">1</div>
+                <div class="step-text">Open <b>Live Communicator</b> from the sidebar</div>
+            </div>
+            <div class="step">
+                <div class="step-num">2</div>
+                <div class="step-text">Click <b>START</b> and allow camera access</div>
+            </div>
+            <div class="step">
+                <div class="step-num">3</div>
+                <div class="step-text">Show a hand sign — hold it <b>steady for ~0.7s</b></div>
+            </div>
+            <div class="step">
+                <div class="step-num">4</div>
+                <div class="step-text">Letter auto-confirms and builds your sentence</div>
+            </div>
+            <div class="step">
+                <div class="step-num">5</div>
+                <div class="step-text">Click <b>🔊 Speak</b> to hear the full sentence aloud</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    with db:
+        st.markdown("""
+        <div class="dir-card right">
+            <h3 style="color:#f472b6;">📝 Text → Gesture</h3>
+            <div class="step">
+                <div class="step-num">1</div>
+                <div class="step-text">Open <b>Text → Gesture</b> from the sidebar</div>
+            </div>
+            <div class="step">
+                <div class="step-num">2</div>
+                <div class="step-text">Type any word or sentence (e.g. "HELLO")</div>
+            </div>
+            <div class="step">
+                <div class="step-num">3</div>
+                <div class="step-text">Click <b>Show Gestures</b> — see ASL hand images</div>
+            </div>
+            <div class="step">
+                <div class="step-num">4</div>
+                <div class="step-text">Each letter displays its real hand-sign photo</div>
+            </div>
+            <div class="step">
+                <div class="step-num">5</div>
+                <div class="step-text">Use <b>▶ Animate</b> for a guided slideshow walkthrough</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── ASL Reference ──
     if os.path.exists('asl_alphabet_guide.png'):
-        st.markdown('<div class="glass-card">',unsafe_allow_html=True)
-        st.subheader("📖 ASL Quick Reference")
-        st.image('asl_alphabet_guide.png',width='stretch')
-        st.markdown('</div>',unsafe_allow_html=True)
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        st.markdown("""
+        <div style="text-align:center;margin-bottom:16px;">
+            <span class="shimmer" style="font-size:1.1rem;font-weight:700;">📖 ASL Alphabet Quick Reference</span>
+            <div style="color:#64748b;font-size:0.85rem;margin-top:4px;">American Sign Language — A through Z</div>
+        </div>""", unsafe_allow_html=True)
+        st.image('asl_alphabet_guide.png', width='stretch')
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────
 # LIVE COMMUNICATOR
