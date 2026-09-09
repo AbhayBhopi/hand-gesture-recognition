@@ -260,98 +260,35 @@ with st.sidebar:
 # MODE 1: LIVE CAMERA RECOGNITION
 if app_mode == "📸 Camera / Live Capture":
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.subheader("📸 Real-Time Hand Gesture Recognition")
-    st.markdown("<p style='color:#94a3b8;'>Show your hand gestures to the camera to translate them to text and speech.</p>", unsafe_allow_html=True)
+    st.subheader("🎥 Real-Time Continuous Live Stream Recognition")
+    st.markdown("<p style='color:#94a3b8;'>Continuously stream your video to translate hand signs into text in real time.</p>", unsafe_allow_html=True)
     
-    cam_tab1, cam_tab2 = st.tabs(["📷 Instant Camera Snapshot (Recommended)", "🎥 Continuous Stream"])
+    cam_tab1, cam_tab2 = st.tabs(["🎥 Continuous Live Stream", "📷 Instant Camera Snapshot"])
     
     with cam_tab1:
-        col_c1, col_c2 = st.columns([1.1, 1], gap="medium")
-        with col_c1:
-            captured_photo = st.camera_input("Show hand gesture to camera and take snapshot")
-            if os.path.exists("asl_alphabet_guide.png"):
-                with st.expander("🖐️ Need help with signs? View ASL Reference Guide"):
-                    st.image("asl_alphabet_guide.png", caption="ASL Hand Gestures Chart")
-        
-        with col_c2:
-            st.subheader("🧠 Recognition Result")
-            if captured_photo is not None and model:
-                img_pil = Image.open(captured_photo)
-                with st.spinner("Analyzing Hand Gesture..."):
-                    top_pred, conf, top5_dict = predict(img_pil, model, device)
-                    
-                    st.markdown(f'''
-                        <div style="text-align: center;">
-                            <p style="margin:0; font-weight:600; color:#94a3b8;">Predicted Gesture</p>
-                            <div class="prediction-badge">{top_pred}</div>
-                            <p class="confidence-badge">Confidence Score: {conf:.2f}%</p>
-                        </div>
-                    ''', unsafe_allow_html=True)
-                    
-                    col_b1, col_b2 = st.columns(2)
-                    with col_b1:
-                        if st.button("➕ Append to Sentence", key="cam_append"):
-                            if top_pred == 'space':
-                                st.session_state.sentence += " "
-                            elif top_pred == 'del':
-                                st.session_state.sentence = st.session_state.sentence[:-1]
-                            elif top_pred != 'nothing':
-                                st.session_state.sentence += top_pred
-                            st.session_state.history.append((top_pred, conf))
-                            st.success(f"Added '{top_pred}' to sentence!")
-                            st.rerun()
-                            
-                    with col_b2:
-                        if st.button("🔊 Speak Symbol", key="cam_speak"):
-                            word_to_speak = "Space" if top_pred == 'space' else ("Delete" if top_pred == 'del' else top_pred)
-                            js_speak = f"""
-                            <script>
-                                var msg = new SpeechSynthesisUtterance("{word_to_speak}");
-                                window.speechSynthesis.speak(msg);
-                            </script>
-                            """
-                            st.components.v1.html(js_speak, height=0)
-                    
-                    st.divider()
-                    st.markdown("#### 📈 Top 5 Class Probabilities")
-                    df_top5 = pd.DataFrame({
-                        'Gesture': list(top5_dict.keys()),
-                        'Probability (%)': list(top5_dict.values())
-                    })
-                    fig = px.bar(
-                        df_top5, 
-                        x='Probability (%)', 
-                        y='Gesture', 
-                        orientation='h', 
-                        color='Probability (%)',
-                        color_continuous_scale='Purples',
-                        text_auto='.1f'
-                    )
-                    fig.update_layout(
-                        paper_bgcolor='rgba(0,0,0,0)',
-                        plot_bgcolor='rgba(0,0,0,0)',
-                        font_color='#f8fafc',
-                        height=240,
-                        margin=dict(l=0, r=0, t=10, b=0),
-                        yaxis=dict(autorange="reversed")
-                    )
-                    st.plotly_chart(fig)
-            else:
-                st.info("👆 Click **Take Photo** in the camera viewfinder to instantly detect your sign!")
-                
-    with cam_tab2:
         col1, col2 = st.columns([1.1, 1], gap="medium")
         
         with col1:
-            st.markdown("Grant camera permissions to start continuous streaming.")
+            st.markdown("Click **START** below and grant camera permissions to begin live recognition.")
             
-            # Multiple free STUN servers for network resilience
+            # TURN and STUN Server Configuration for Cloud WebRTC Traversal
+            # Uses global relay with TCP fallback on port 443 to bypass cloud container NAT
             RTC_CONFIGURATION = RTCConfiguration(
-                {"iceServers": [
-                    {"urls": ["stun:stun.l.google.com:19302"]},
-                    {"urls": ["stun:stun1.l.google.com:19302"]},
-                    {"urls": ["stun:stun2.l.google.com:19302"]}
-                ]}
+                {
+                    "iceServers": [
+                        {"urls": ["stun:stun.l.google.com:19302"]},
+                        {"urls": ["stun:stun.relay.metered.ca:80"]},
+                        {
+                            "urls": [
+                                "turn:global.relay.metered.ca:80",
+                                "turn:global.relay.metered.ca:443",
+                                "turns:global.relay.metered.ca:443?transport=tcp",
+                            ],
+                            "username": "openrelayproject",
+                            "credential": "openrelayproject",
+                        },
+                    ]
+                }
             )
             
             # Initialize MediaPipe Tasks API safely (handles headless cloud environments without libEGL)
@@ -419,10 +356,85 @@ if app_mode == "📸 Camera / Live Capture":
                 async_processing=True
             )
             
-        with col2:
-            st.subheader("🧠 Live Recognition Result")
-            st.info("The AI draws the predicted gesture directly onto your live video feed! If the stream has connection latency, switch to the **Instant Camera Snapshot** tab above.")
+            if os.path.exists("asl_alphabet_guide.png"):
+                with st.expander("🖐️ Need help with signs? View ASL Reference Guide"):
+                    st.image("asl_alphabet_guide.png", caption="ASL Hand Gestures Chart")
             
+        with col2:
+            st.subheader("🧠 Live Stream Output")
+            st.info("The AI continuously reads every camera frame, classifies the sign with the PyTorch model, and overlays the predicted gesture directly onto the live video feed!")
+            
+    with cam_tab2:
+        col_c1, col_c2 = st.columns([1.1, 1], gap="medium")
+        with col_c1:
+            captured_photo = st.camera_input("Take a snapshot of your hand gesture")
+        
+        with col_c2:
+            st.subheader("🧠 Recognition Result")
+            if captured_photo is not None and model:
+                img_pil = Image.open(captured_photo)
+                with st.spinner("Analyzing Hand Gesture..."):
+                    top_pred, conf, top5_dict = predict(img_pil, model, device)
+                    
+                    st.markdown(f'''
+                        <div style="text-align: center;">
+                            <p style="margin:0; font-weight:600; color:#94a3b8;">Predicted Gesture</p>
+                            <div class="prediction-badge">{top_pred}</div>
+                            <p class="confidence-badge">Confidence Score: {conf:.2f}%</p>
+                        </div>
+                    ''', unsafe_allow_html=True)
+                    
+                    col_b1, col_b2 = st.columns(2)
+                    with col_b1:
+                        if st.button("➕ Append to Sentence", key="cam_append"):
+                            if top_pred == 'space':
+                                st.session_state.sentence += " "
+                            elif top_pred == 'del':
+                                st.session_state.sentence = st.session_state.sentence[:-1]
+                            elif top_pred != 'nothing':
+                                st.session_state.sentence += top_pred
+                            st.session_state.history.append((top_pred, conf))
+                            st.success(f"Added '{top_pred}' to sentence!")
+                            st.rerun()
+                            
+                    with col_b2:
+                        if st.button("🔊 Speak Symbol", key="cam_speak"):
+                            word_to_speak = "Space" if top_pred == 'space' else ("Delete" if top_pred == 'del' else top_pred)
+                            js_speak = f"""
+                            <script>
+                                var msg = new SpeechSynthesisUtterance("{word_to_speak}");
+                                window.speechSynthesis.speak(msg);
+                            </script>
+                            """
+                            st.components.v1.html(js_speak, height=0)
+                    
+                    st.divider()
+                    st.markdown("#### 📈 Top 5 Class Probabilities")
+                    df_top5 = pd.DataFrame({
+                        'Gesture': list(top5_dict.keys()),
+                        'Probability (%)': list(top5_dict.values())
+                    })
+                    fig = px.bar(
+                        df_top5, 
+                        x='Probability (%)', 
+                        y='Gesture', 
+                        orientation='h', 
+                        color='Probability (%)',
+                        color_continuous_scale='Purples',
+                        text_auto='.1f'
+                    )
+                    fig.update_layout(
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        font_color='#f8fafc',
+                        height=240,
+                        margin=dict(l=0, r=0, t=10, b=0),
+                        yaxis=dict(autorange="reversed")
+                    )
+                    st.plotly_chart(fig)
+            else:
+                st.info("👆 Click **Take Photo** in the camera viewfinder to test a single sign.")
+                
     st.markdown('</div>', unsafe_allow_html=True)
 
 # MODE 2: UPLOAD IMAGE INFERENCE
